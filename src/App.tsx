@@ -521,6 +521,18 @@ export default function App() {
     catch(e) { console.error(e); setErrorMessage("Silme başarısız."); }
   };
 
+  const deleteNote = async (id) => {
+    if(!window.confirm("Bu notu kalıcı olarak silmek istediğinize emin misiniz?")) return;
+    if (!user || !db || isOfflineMode) {
+      const updated = notes.filter(n => n.id !== id);
+      setNotes(updated);
+      localStorage.setItem('premium_notes', JSON.stringify(updated));
+      return;
+    }
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'notes', id)); }
+    catch(e) { console.error(e); setErrorMessage("Not silinemedi."); }
+  };
+
   const addNote = async (type, content) => {
     if (!activeProjectId) return;
     const newNote = { projectId: activeProjectId, type, content, date: getCurrentTimeStr(), createdAt: Date.now() };
@@ -814,11 +826,16 @@ export default function App() {
       <div className="space-y-4">
         {activeNotes.length === 0 && <p className="text-center text-gray-400 font-medium py-10">Henüz not alınmadı.</p>}
         {activeNotes.map(note => (
-          <div key={note.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
+          <div key={note.id} className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative group">
             <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{note.date}</span>
-              {note.type === 'image' && <ImageIcon className="w-4 h-4 text-blue-500" />}
-              {note.type === 'text' && <FileText className="w-4 h-4 text-gray-400" />}
+              <div className="flex items-center gap-3">
+                {note.type === 'image' && <ImageIcon className="w-4 h-4 text-blue-500" />}
+                {note.type === 'text' && <FileText className="w-4 h-4 text-gray-400" />}
+                <button onClick={() => deleteNote(note.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             {note.type === 'text' && <p className="text-sm text-gray-800 leading-relaxed font-medium">{note.content}</p>}
             {note.type === 'image' && <img src={note.content} alt="Not" className="w-full h-48 object-cover rounded-xl border border-gray-100" />}
@@ -1060,5 +1077,6 @@ export default function App() {
     </div>
   );
 }
+
 
 
