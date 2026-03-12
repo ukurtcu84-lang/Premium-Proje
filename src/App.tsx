@@ -69,7 +69,7 @@ export default function App() {
   const formatCurrency = (amount, currencyCode = 'TRY') => {
     if (amount === null || amount === undefined || amount === '') return '-';
     return new Intl.NumberFormat('tr-TR', { 
-      style: 'currency', currency: currencyCode, minimumFractionDigits: 0, maximumFractionDigits: 0
+      style: 'currency', currency: Code = 'TRY', minimumFractionDigits: 0, maximumFractionDigits: 0
     }).format(amount);
   };
 
@@ -381,7 +381,7 @@ export default function App() {
   };
 
   const deleteProject = async (id) => {
-    if(confirm("Bu projeyi ve içindeki tüm verileri kalıcı olarak silmek istediğinize emin misiniz?")) {
+    if(window.confirm("Bu projeyi ve içindeki tüm verileri kalıcı olarak silmek istediğinize emin misiniz?")) {
       if (!user || !db || isOfflineMode) {
          const updated = projects.filter(p => p.id !== id);
          setProjects(updated);
