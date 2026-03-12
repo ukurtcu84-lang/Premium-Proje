@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 import { 
@@ -143,6 +143,11 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
+  // Form states for login/signup
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState(''); // Only used in UI for signup
+
   const [projects, setProjects] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -184,31 +189,20 @@ export default function App() {
 
   // --- FIREBASE BAĞLANTISI ---
   useEffect(() => {
-    const initAuth = async () => {
-      if (!auth) {
+    if (!auth) {
         setAuthError("Firebase bağlantısı kurulamadı. Lütfen internetinizi kontrol edin.");
         return;
-      }
-      try {
-        await signInAnonymously(auth);
-      } catch (error) {
-        console.error("Kimlik doğrulama hatası:", error);
-        if (error.code === 'auth/configuration-not-found' || error.code === 'auth/admin-restricted-operation') {
-            setAuthError("Firebase Console üzerinden 'Authentication' (Kimlik Doğrulama) kısmında 'Anonymous' (Anonim) girişi aktif etmeniz gerekiyor.");
-        } else {
-            setAuthError(error.message);
-        }
-        setIsOfflineMode(true); 
-      }
-    };
-    initAuth();
-
-    if (auth) {
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        setUser(currentUser);
-      });
-      return () => unsubscribe();
     }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (currentUser) {
+            setUser(currentUser);
+            setIsAuthenticated(true);
+        } else {
+            setUser(null);
+            setIsAuthenticated(false);
+        }
+    });
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -269,14 +263,69 @@ export default function App() {
     }
   };
 
-  const handleAuthSubmit = (e) => {
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    setIsAuthenticated(true); 
+    setAuthError('');
+    setIsOfflineMode(false);
+
+    if (!auth) {
+        setAuthError("Sistem bağlantısı kurulamadı, sayfayı yenileyin.");
+        return;
+    }
+
+    try {
+        if (isLoginMode) {
+            // Mevcut kullanıcı girişi
+            await signInWithEmailAndPassword(auth, email, password);
+        } else {
+            // Yeni kullanıcı kaydı
+            await createUserWithEmailAndPassword(auth, email, password);
+        }
+        // onAuthStateChanged (useEffect içinde) çalışacak ve isAuthenticated'i true yapacak.
+    } catch (error) {
+        console.error("Kimlik doğrulama hatası:", error);
+        
+        // Kullanıcıya daha anlaşılır hata mesajları gösterme
+        switch (error.code) {
+            case 'auth/invalid-credential':
+            case 'auth/user-not-found':
+            case 'auth/wrong-password':
+                setAuthError("E-posta adresi veya şifre hatalı.");
+                break;
+            case 'auth/email-already-in-use':
+                setAuthError("Bu e-posta adresi zaten kullanımda.");
+                break;
+            case 'auth/weak-password':
+                setAuthError("Şifre çok zayıf. En az 6 karakter olmalı.");
+                break;
+            case 'auth/invalid-email':
+                setAuthError("Geçersiz e-posta adresi formatı.");
+                break;
+            case 'auth/operation-not-allowed':
+                setAuthError("E-posta/Şifre ile giriş Firebase Console'da kapalı. Lütfen açın.");
+                break;
+            default:
+                setAuthError("Bir hata oluştu: " + error.message);
+        }
+    }
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setActiveProjectId(null);
+  const handleLogout = async () => {
+    try {
+        if (auth) {
+            await signOut(auth);
+        }
+        setIsAuthenticated(false);
+        setActiveProjectId(null);
+    } catch (error) {
+        console.error("Çıkış yapılırken hata:", error);
+    }
+  };
+
+  const startOfflineMode = (e) => {
+    e.preventDefault();
+    setIsOfflineMode(true);
+    setIsAuthenticated(true);
   };
 
   const handleCreateProject = async (e) => {
@@ -443,7 +492,7 @@ export default function App() {
           </div>
 
           {authError && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-700 p-3 rounded-xl text-[11px] font-semibold mb-4 flex items-start gap-2">
+            <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl text-[11px] font-semibold mb-4 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <p>{authError}</p>
             </div>
@@ -455,7 +504,7 @@ export default function App() {
                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 ml-1">Ad Soyad</label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" />
-                  <input type="text" required placeholder="Adınız Soyadınız" className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
+                  <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} required placeholder="Adınız Soyadınız" className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
                 </div>
               </div>
             )}
@@ -463,22 +512,30 @@ export default function App() {
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 ml-1">E-Posta Adresi</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" />
-                <input type="email" required placeholder="ornek@sirket.com" className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="ornek@sirket.com" className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
               </div>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 ml-1">Şifre</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" />
-                <input type="password" required placeholder="••••••••" className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
               </div>
             </div>
+            
             <button type="submit" className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-all tracking-wide mt-2">
-              {authError ? "Çevrimdışı (Offline) Başla" : (isLoginMode ? "Sisteme Giriş Yap" : "Kayıt Ol ve Başla")}
+              {isLoginMode ? "Sisteme Giriş Yap" : "Kayıt Ol ve Başla"}
             </button>
+
+            {/* Offline devam seçeneği eklendi */}
+            <div className="pt-2">
+                <button type="button" onClick={startOfflineMode} className="w-full bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200 active:scale-95 transition-all text-xs flex items-center justify-center gap-2">
+                    <CloudOff className="w-4 h-4" /> Giriş Yapmadan Devam Et (Çevrimdışı)
+                </button>
+            </div>
           </form>
 
-          <div className="mt-8 text-center">
+          <div className="mt-6 text-center">
             <button onClick={() => setIsLoginMode(!isLoginMode)} className="text-[13px] font-bold text-gray-500 hover:text-blue-600 transition-colors">
               {isLoginMode ? "Hesabınız yok mu? Kayıt Olun" : "Zaten hesabınız var mı? Giriş Yapın"}
             </button>
@@ -497,6 +554,7 @@ export default function App() {
              {isOfflineMode && <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded text-[8px] flex items-center gap-1 font-bold"><CloudOff className="w-2.5 h-2.5"/> Çevrimdışı</span>}
            </div>
            <h1 className="text-xl font-extrabold tracking-tight">Proje Portföyü</h1>
+           {user && !isOfflineMode && <p className="text-[10px] text-gray-400 mt-1 truncate max-w-[150px]">{user.email}</p>}
         </div>
         <div className="flex gap-2">
           <button onClick={() => setIsProjectFormOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2.5 rounded-xl shadow-sm active:scale-95 transition-all flex items-center gap-1.5">
