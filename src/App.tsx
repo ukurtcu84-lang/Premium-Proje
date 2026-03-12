@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import './index.css';
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -69,7 +70,7 @@ export default function App() {
   const formatCurrency = (amount, currencyCode = 'TRY') => {
     if (amount === null || amount === undefined || amount === '') return '-';
     return new Intl.NumberFormat('tr-TR', { 
-      style: 'currency', currency: Code = 'TRY', minimumFractionDigits: 0, maximumFractionDigits: 0
+      style: 'currency', currency: currencyCode, minimumFractionDigits: 0, maximumFractionDigits: 0
     }).format(amount);
   };
 
@@ -779,3 +780,5 @@ export default function App() {
     </div>
   );
 }
+
+
