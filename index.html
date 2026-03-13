@@ -1,14 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
   <head>
-    <script src="https://cdn.tailwindcss.com"></script>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
+    <!-- Tarayıcı sekmesinde görünecek isim -->
+    <title>Ukurtcu Management</title>
+    
+    <!-- Telefonunuzun ana ekranına eklendiğinde görünecek isim -->
+    <meta name="apple-mobile-web-app-title" content="Ukurtcu">
+    <meta name="application-name" content="Ukurtcu">
+    
+    <!-- Tam Ekran ve Gerçek Uygulama Hissi (Adres çubuğunu gizler) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#111827">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    
+    <!-- İkon (Bir sonraki adımda yükleyeceğiz) -->
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    
+    <!-- Tasarım kütüphanesi -->
+    <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
