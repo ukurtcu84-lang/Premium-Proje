@@ -567,7 +567,7 @@ export default function App() {
       <div className="bg-gray-900 text-white px-6 py-6 flex justify-between items-center rounded-b-3xl shadow-md sticky top-0 z-20 border-b border-gray-800">
         <div>
            <div className="flex items-center gap-2 mb-0.5">
-             <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Premium Yönetim</p>
+             <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Ukurtcu Management</p>
              {isOfflineMode && <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded text-[8px] flex items-center gap-1 font-bold"><CloudOff className="w-2.5 h-2.5"/> Çevrimdışı</span>}
            </div>
            <h1 className="text-xl font-extrabold tracking-tight">Proje Portföyü</h1>
@@ -643,6 +643,8 @@ export default function App() {
     if (!activeProject) return null;
     const pendingTasks = activeTasks.filter(t => !t.completed);
     const overdueTasks = pendingTasks.filter(t => calculateStatus(t.deadlineDate, t.deadlineTime, false) === 'overdue');
+    const timeInfo = getRemainingDays(activeProject.contractDate, activeProject.duration);
+    
     const progressPercent = calculateProgress(activeProject.cumulativePayment, activeProject.budget);
     const targetPercent = calculateProgress(activeProject.targetPayment, activeProject.budget);
     const variance = getFinancialVariance(activeProject.cumulativePayment, activeProject.targetPayment, activeProject.budget);
@@ -864,7 +866,8 @@ export default function App() {
           
           <h2 className="text-2xl font-extrabold text-center text-gray-900 mb-1 tracking-tight leading-tight">Premium Proje <br/>Yönetim Paneli</h2>
           <div className="flex justify-center mb-6">
-             <span className="bg-blue-100 text-blue-700 text-[10px] font-extrabold px-2.5 py-1 rounded-md tracking-widest uppercase">Bulut Senkronize</span>
+             {/* YAZI BURADA DEĞİŞTİRİLDİ */}
+             <span className="bg-blue-100 text-blue-700 text-[10px] font-extrabold px-2.5 py-1 rounded-md tracking-widest uppercase">Ukurtcu Management</span>
           </div>
 
           {authError && (
@@ -940,7 +943,8 @@ export default function App() {
             <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
               <button onClick={leaveProject} className="p-1.5 bg-gray-800 rounded-lg hover:bg-gray-700 active:scale-95 transition-all flex-shrink-0 border border-gray-700"><ChevronLeft className="w-6 h-6 text-gray-300" /></button>
               <div className="flex-1 truncate ml-1">
-                <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-0.5">Premium Yönetim</p>
+                {/* YAZI BURADA DA DEĞİŞTİRİLDİ */}
+                <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest mb-0.5">Ukurtcu Management</p>
                 <h1 className="text-sm font-extrabold truncate tracking-tight">{activeProject?.name}</h1>
               </div>
             </div>
@@ -1077,6 +1081,5 @@ export default function App() {
     </div>
   );
 }
-
 
 
