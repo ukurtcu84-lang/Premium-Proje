@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import './index.css';
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -43,7 +42,7 @@ const i18n = {
     appTitle: "Ukurtcu Management",
     loginTitle1: "Premium Proje",
     loginTitle2: "Yönetim Paneli",
-    cloudSync: "Ukurtcu Management", // Bulut Senkronize yerine Ukurtcu yazıldı
+    cloudSync: "Ukurtcu Management",
     fullNameLabel: "Ad Soyad",
     fullNamePlaceholder: "Adınız Soyadınız",
     emailLabel: "E-Posta Adresi",
