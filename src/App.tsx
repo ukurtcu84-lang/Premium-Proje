@@ -39,7 +39,7 @@ const appId = "premiumproje";
 // --- ÇOKLU DİL (i18n) SÖZLÜĞÜ ---
 const i18n = {
   tr: {
-    appTitle: "Ukurtcu Management",
+    appTitle: "PMPP",
     loginTitle1: "Premium Proje",
     loginTitle2: "Yönetim Paneli",
     cloudSync: "Ukurtcu Management",
@@ -126,7 +126,7 @@ const i18n = {
     late: "Gecikti:"
   },
   en: {
-    appTitle: "Ukurtcu Management",
+    appTitle: "PMPP",
     loginTitle1: "Premium Project",
     loginTitle2: "Management Panel",
     cloudSync: "Ukurtcu Management",
