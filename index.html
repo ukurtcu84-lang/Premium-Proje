@@ -1,28 +1,43 @@
+
 <!doctype html>
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
-    <!-- Tarayıcı sekmesinde görünecek isim -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Ukurtcu Management</title>
     
-    <!-- Telefonunuzun ana ekranına eklendiğinde görünecek isim -->
-    <meta name="apple-mobile-web-app-title" content="Ukurtcu">
-    <meta name="application-name" content="Ukurtcu">
-    
-    <!-- Tam Ekran ve Gerçek Uygulama Hissi (Adres çubuğunu gizler) -->
+    <!-- MOBİL UYGULAMA (PWA) AYARLARI -->
+    <meta name="theme-color" content="#111827">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#111827">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-title" content="Ukurtcu">
+    <link rel="apple-touch-icon" href="/logo.png">
     
-    <!-- İkon (Bir sonraki adımda yükleyeceğiz) -->
-    <link rel="icon" type="image/png" href="/logo.png" />
-    <link rel="apple-touch-icon" href="/logo.png" />
+    <!-- Tarayıcıyı Aplikasyon Gibi Çalışmaya Zorlayan Manifest -->
+    <link rel="manifest" href='data:application/manifest+json,{"name":"Ukurtcu Management","short_name":"Ukurtcu","start_url":"/","display":"standalone","background_color":"#111827","theme_color":"#111827","icons":[{"src":"/logo.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}'>
     
-    <!-- Tasarım kütüphanesi -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+      /* Güvenli alan ve Native Mobil Uygulama optimizasyonları */
+      body {
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior-y: none;
+        /* Metin seçimini engelle (Uygulama hissi verir) */
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      /* Sadece yazı yazılacak alanlarda seçime izin ver */
+      input, textarea, select {
+        -webkit-user-select: auto;
+        user-select: auto;
+      }
+      .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
+      .mb-safe { margin-bottom: env(safe-area-inset-bottom, 20px); }
+    </style>
   </head>
-  <body>
+  <body class="bg-gray-900 selection:bg-blue-100 selection:text-blue-900">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
