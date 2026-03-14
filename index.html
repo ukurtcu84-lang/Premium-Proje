@@ -14,22 +14,19 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <link rel="icon" type="image/png" href="/logo.png">
     
-    <link rel="manifest" href='data:application/manifest+json,{"name":"Ukurtcu Management","short_name":"Ukurtcu","start_url":"/","display":"standalone","background_color":"#111827","theme_color":"#111827","icons":[{"src":"/logo.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}'>
+    <link rel="manifest" href="/manifest.json">
     
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
-      /* Güvenli alan ve Native Mobil Uygulama optimizasyonları */
       body {
         -webkit-tap-highlight-color: transparent;
         overscroll-behavior-y: none;
-        /* Metin seçimini engelle (Uygulama hissi verir) */
         -webkit-user-select: none;
         user-select: none;
-        background-color: #111827; /* Arka plan rengi */
-        color: white; /* Varsayılan metin rengi */
+        background-color: #111827;
+        color: white;
       }
-      /* Sadece yazı yazılacak form alanlarında metin seçimine izin ver */
       input, textarea, select {
         -webkit-user-select: auto;
         user-select: auto;
@@ -43,4 +40,3 @@
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
-
