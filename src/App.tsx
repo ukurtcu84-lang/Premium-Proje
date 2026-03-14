@@ -43,7 +43,7 @@ const i18n = {
     appTitle: "Ukurtcu Management",
     loginTitle1: "Premium Proje",
     loginTitle2: "Yönetim Paneli",
-    cloudSync: "Bulut Senkronize",
+    cloudSync: "Ukurtcu Management", // Bulut Senkronize yerine Ukurtcu yazıldı
     fullNameLabel: "Ad Soyad",
     fullNamePlaceholder: "Adınız Soyadınız",
     emailLabel: "E-Posta Adresi",
@@ -52,7 +52,7 @@ const i18n = {
     passwordPlaceholder: "••••••••",
     loginBtn: "Sisteme Giriş Yap",
     signupBtn: "Kayıt Ol ve Başla",
-    offlineBtn: "Giriş Yapmadan Devam Et (Çevrimdışı)",
+    offlineBtn: "Giriş Yapmadan Devam Et",
     noAccount: "Hesabınız yok mu? Kayıt Olun",
     hasAccount: "Zaten hesabınız var mı? Giriş Yapın",
     authErrorConnect: "Sistem bağlantısı kurulamadı, sayfayı yenileyin.",
@@ -130,7 +130,7 @@ const i18n = {
     appTitle: "Ukurtcu Management",
     loginTitle1: "Premium Project",
     loginTitle2: "Management Panel",
-    cloudSync: "Cloud Synchronized",
+    cloudSync: "Ukurtcu Management",
     fullNameLabel: "Full Name",
     fullNamePlaceholder: "John Doe",
     emailLabel: "Email Address",
@@ -139,7 +139,7 @@ const i18n = {
     passwordPlaceholder: "••••••••",
     loginBtn: "Login",
     signupBtn: "Sign Up & Start",
-    offlineBtn: "Continue Without Login (Offline)",
+    offlineBtn: "Continue Without Login",
     noAccount: "Don't have an account? Sign Up",
     hasAccount: "Already have an account? Login",
     authErrorConnect: "Connection failed, please refresh.",
@@ -374,7 +374,7 @@ export default function App() {
   const recognitionRef = useRef(null);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
-  const activeTasks = tasks.filter(t => t.projectId === activeProjectId);
+  const activeTasks = tasks.filter(task => task.projectId === activeProjectId);
   const activeNotes = notes.filter(n => n.projectId === activeProjectId).sort((a,b) => b.createdAt - a.createdAt);
 
   useEffect(() => {
@@ -536,7 +536,7 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
-  // --- CRUD İŞLEMLERİ ---
+  // --- CRUD İŞLEMLERİ (Bulut + LocalStorage Desteği) ---
   const handleCreateProject = async (e) => {
     e.preventDefault();
     if (!projectForm.name.trim()) return;
@@ -562,7 +562,7 @@ export default function App() {
       setProjectForm({name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: ''});
       enterProject(docRef.id);
     } catch (error) { 
-      console.error(error); 
+      console.error("Proje oluşturulurken hata:", error); 
     }
   };
 
@@ -573,7 +573,7 @@ export default function App() {
          setProjects(updated);
          localStorage.setItem('premium_projects', JSON.stringify(updated));
          
-         const updatedTasks = tasks.filter(t => t.projectId !== id);
+         const updatedTasks = tasks.filter(task => task.projectId !== id);
          setTasks(updatedTasks);
          localStorage.setItem('premium_tasks', JSON.stringify(updatedTasks));
          
@@ -586,8 +586,8 @@ export default function App() {
       }
       try {
         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'projects', id));
-        const tasksToDelete = tasks.filter(t => t.projectId === id);
-        tasksToDelete.forEach(t => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', t.id)));
+        const tasksToDelete = tasks.filter(task => task.projectId === id);
+        tasksToDelete.forEach(task => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', task.id)));
         const notesToDelete = notes.filter(n => n.projectId === id);
         notesToDelete.forEach(n => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'notes', n.id)));
         setActiveProjectId(null);
@@ -637,7 +637,7 @@ export default function App() {
 
   const handleUpdateTask = async (id, newDate, newTime) => {
     if (!user || !db || isOfflineMode) {
-      const updated = tasks.map(t => t.id === id ? { ...t, deadlineDate: newDate, deadlineTime: newTime } : t);
+      const updated = tasks.map(task => task.id === id ? { ...task, deadlineDate: newDate, deadlineTime: newTime } : task);
       setTasks(updated);
       localStorage.setItem('premium_tasks', JSON.stringify(updated));
       setEditingTask(null); 
@@ -659,7 +659,7 @@ export default function App() {
 
   const approveTaskSelection = async () => {
     if (!user || !db || isOfflineMode) {
-       const updated = tasks.map(t => selectedPendingTasks.includes(t.id) ? { ...t, completed: true } : t);
+       const updated = tasks.map(task => selectedPendingTasks.includes(task.id) ? { ...task, completed: true } : task);
        setTasks(updated);
        localStorage.setItem('premium_tasks', JSON.stringify(updated));
        setSelectedPendingTasks([]); 
@@ -676,7 +676,7 @@ export default function App() {
 
   const revertCompletedTask = async (id) => {
     if (!user || !db || isOfflineMode) {
-       const updated = tasks.map(t => t.id === id ? { ...t, completed: false } : t);
+       const updated = tasks.map(task => task.id === id ? { ...task, completed: false } : task);
        setTasks(updated);
        localStorage.setItem('premium_tasks', JSON.stringify(updated));
        return;
@@ -687,7 +687,7 @@ export default function App() {
 
   const deleteTask = async (id) => {
     if (!user || !db || isOfflineMode) { 
-      const updated = tasks.filter(t => t.id !== id);
+      const updated = tasks.filter(task => task.id !== id);
       setTasks(updated);
       localStorage.setItem('premium_tasks', JSON.stringify(updated));
       return; 
@@ -743,7 +743,7 @@ export default function App() {
         <div>
            <div className="flex items-center gap-2 mb-0.5">
              <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">{t.appTitle}</p>
-             {isOfflineMode && <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded text-[8px] flex items-center gap-1 font-bold"><CloudOff className="w-2.5 h-2.5"/> {t.offline}</span>}
+             {isOfflineMode && <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded text-[8px] flex items-center gap-1 font-bold"><CloudOff className="w-2.5 h-2.5"/> {t.offlineBtn}</span>}
            </div>
            <h1 className="text-xl font-extrabold tracking-tight">{t.portfolio}</h1>
            {user && !isOfflineMode && <p className="text-[10px] text-gray-400 mt-1 truncate max-w-[150px]">{user.email}</p>}
