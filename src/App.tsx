@@ -40,10 +40,10 @@ const appId = "premiumproje";
 // --- ÇOKLU DİL (i18n) SÖZLÜĞÜ ---
 const i18n = {
   tr: {
-    appTitle: "Ukurtcu Management",
-    loginTitle1: "Premium Proje",
+    appTitle: "PMPP",
+    loginTitle1: "PMPP",
     loginTitle2: "Yönetim Paneli",
-    cloudSync: "Ukurtcu Management",
+    cloudSync: "PMPP",
     fullNameLabel: "Ad Soyad",
     fullNamePlaceholder: "Adınız Soyadınız",
     emailLabel: "E-Posta Adresi",
@@ -131,10 +131,10 @@ const i18n = {
     late: "Gecikti:"
   },
   en: {
-    appTitle: "Ukurtcu Management",
-    loginTitle1: "Premium Project",
+    appTitle: "PMPP",
+    loginTitle1: "PMPP",
     loginTitle2: "Management Panel",
-    cloudSync: "Ukurtcu Management",
+    cloudSync: "PMPP",
     fullNameLabel: "Full Name",
     fullNamePlaceholder: "John Doe",
     emailLabel: "Email Address",
@@ -361,7 +361,7 @@ export default function App() {
   
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isProjectFormOpen, setIsProjectFormOpen] = useState(false);
-  const [editingProjectId, setEditingProjectId] = useState(null); // YENİ: Proje Düzenleme Modu
+  const [editingProjectId, setEditingProjectId] = useState(null);
   const [isProjectInfoOpen, setIsProjectInfoOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   
@@ -547,14 +547,12 @@ export default function App() {
 
   // --- CRUD İŞLEMLERİ (Bulut + LocalStorage Desteği) ---
   
-  // YENİ: Proje formunu kapatma ve sıfırlama fonksiyonu
   const closeProjectForm = () => {
     setIsProjectFormOpen(false);
     setEditingProjectId(null);
     setProjectForm({name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: '', advancePayment: ''});
   };
 
-  // YENİ: Düzenleme modunu açma fonksiyonu
   const openEditProject = () => {
     if (!activeProject) return;
     setProjectForm({
@@ -574,7 +572,6 @@ export default function App() {
     setIsProjectFormOpen(true);
   };
 
-  // GÜNCELLENDİ: Hem yeni proje oluşturma hem de mevcut projeyi güncelleme
   const handleSaveProject = async (e) => {
     e.preventDefault();
     if (!projectForm.name.trim()) return;
@@ -586,7 +583,6 @@ export default function App() {
     };
 
     if (editingProjectId) {
-      // GÜNCELLEME İŞLEMİ
       if (!user || !db || isOfflineMode) {
         const updated = projects.map(p => p.id === editingProjectId ? { ...p, ...projectData } : p);
         setProjects(updated);
@@ -603,7 +599,6 @@ export default function App() {
       }
 
     } else {
-      // YENİ OLUŞTURMA İŞLEMİ
       projectData.cumulativePayment = 0;
       projectData.targetPayment = 0;
       projectData.createdAt = Date.now();
@@ -887,7 +882,7 @@ export default function App() {
     return (
       <div className="px-5 pb-28 pt-6 space-y-5 animate-in fade-in duration-300">
         <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-[0_4px_12px_rgba(0,0,0,0.03)] relative">
-          <button onClick={() => setIsProjectInfoOpen(true)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+          <button onClick={openEditProject} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
             <MoreVertical className="w-5 h-5" />
           </button>
           
@@ -922,7 +917,7 @@ export default function App() {
               </div>
             </div>
             
-            {/* AVANS GÖSTERİMİ */}
+            {/* AVANS GÖSTERİMİ (Dashboard) */}
             {(activeProject.advancePayment > 0) && (
               <div className="bg-blue-50/50 rounded-xl p-3 border border-blue-100 mb-5 flex justify-between items-center">
                 <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1"><Banknote className="w-3 h-3"/> {t.advancePayment}</p>
@@ -1257,6 +1252,7 @@ export default function App() {
                     <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.client}</label><input type="text" value={projectForm.client} onChange={e => setProjectForm({...projectForm, client: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-2 shadow-sm" /></div>
                     <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.location}</label><div className="relative"><MapPin className="absolute left-3.5 top-3.5 w-4 h-4 text-gray-400" /><input type="text" value={projectForm.location} onChange={e => setProjectForm({...projectForm, location: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl pl-10 pr-4 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" /></div></div>
                   </div>
+                  
                   <div className="space-y-4">
                     <h4 className="text-[11px] font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-1.5 border-b border-gray-100 pb-2 mt-2"><Wallet className="w-3.5 h-3.5"/> {t.durationCost}</h4>
                     <div className="grid grid-cols-2 gap-3">
@@ -1264,17 +1260,21 @@ export default function App() {
                       <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.durationDays}</label><input type="number" min="1" value={projectForm.duration} onChange={e => setProjectForm({...projectForm, duration: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" /></div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-3">
+                    {/* BÜTÇE VE AVANS TUTARI (GENİŞ EKRAN) */}
+                    <div className="space-y-4">
                       <div>
                         <label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.totalBudget}</label>
                         <div className="flex gap-2">
-                          <select value={projectForm.currency} onChange={e => setProjectForm({...projectForm, currency: e.target.value})} className="w-20 bg-gray-50 border border-gray-300 rounded-xl px-2 py-3 text-sm font-extrabold focus:outline-none focus:border-blue-500"><option value="TRY">₺</option><option value="USD">$</option><option value="EUR">€</option></select>
-                          <input required type="number" value={projectForm.budget} onChange={e => setProjectForm({...projectForm, budget: e.target.value})} placeholder="0.00" className="flex-1 w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
+                          <select value={projectForm.currency} onChange={e => setProjectForm({...projectForm, currency: e.target.value})} className="w-24 bg-gray-50 border border-gray-300 rounded-xl px-2 py-3 text-base font-extrabold focus:outline-none focus:border-blue-500"><option value="TRY">₺ (TL)</option><option value="USD">$ (USD)</option><option value="EUR">€ (EUR)</option></select>
+                          <input required type="number" value={projectForm.budget} onChange={e => setProjectForm({...projectForm, budget: e.target.value})} placeholder="0.00" className="flex-1 w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-base font-bold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
                         </div>
                       </div>
                       <div>
                          <label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.advancePayment}</label>
-                         <input type="number" value={projectForm.advancePayment} onChange={e => setProjectForm({...projectForm, advancePayment: e.target.value})} placeholder="0.00" className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
+                         <div className="relative">
+                           <span className="absolute left-4 top-3.5 text-base font-bold text-gray-400">{getCurrencySymbol(projectForm.currency)}</span>
+                           <input type="number" value={projectForm.advancePayment} onChange={e => setProjectForm({...projectForm, advancePayment: e.target.value})} placeholder="0.00" className="w-full bg-white border border-gray-300 rounded-xl pl-10 pr-4 py-3 text-base font-bold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
+                         </div>
                       </div>
                     </div>
                     
@@ -1296,7 +1296,6 @@ export default function App() {
           <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl relative">
               
-              {/* DÜZENLE BUTONU EKLENDİ */}
               <button onClick={openEditProject} className="absolute top-4 right-14 bg-blue-50 p-2 rounded-xl text-blue-600 z-10 hover:bg-blue-100 transition-colors shadow-sm"><Edit3 className="w-5 h-5" /></button>
               <button onClick={() => setIsProjectInfoOpen(false)} className="absolute top-4 right-4 bg-gray-100 p-2 rounded-xl text-gray-600 z-10 hover:bg-gray-200 transition-colors shadow-sm"><X className="w-5 h-5" /></button>
               
@@ -1308,16 +1307,18 @@ export default function App() {
                   <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.client}</p><p className="font-bold text-gray-800 text-sm">{activeProject.client || '-'}</p></div>
                   <div className="grid grid-cols-2 gap-3"><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.contractDate}</p><p className="font-bold text-gray-800 text-sm">{formatDisplayDate(activeProject.contractDate) || '-'}</p></div><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.durationDays}</p><p className="font-bold text-gray-800 text-sm">{activeProject.duration ? `${activeProject.duration}` : '-'}</p></div></div>
                   
-                  {/* BÜTÇE VE AVANS YAN YANA */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm">
-                      <p className="text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-1">{t.totalBudget}</p>
-                      <p className="font-black text-blue-700 text-base tracking-tight">{formatCurrency(activeProject.budget, activeProject.currency)}</p>
+                  {/* BÜTÇE VE AVANS ALT ALTA - BÜYÜK RAKAMLAR İÇİN */}
+                  <div className="space-y-3">
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between">
+                      <p className="text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-1 flex-shrink-0">{t.totalBudget}</p>
+                      <p className="font-black text-blue-700 text-lg tracking-tight truncate pl-4">{formatCurrency(activeProject.budget, activeProject.currency)}</p>
                     </div>
-                    <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm">
-                      <p className="text-[10px] text-emerald-600 uppercase font-bold tracking-widest mb-1">{t.advance}</p>
-                      <p className="font-black text-emerald-700 text-base tracking-tight">{formatCurrency(activeProject.advancePayment, activeProject.currency)}</p>
-                    </div>
+                    {activeProject.advancePayment > 0 && (
+                      <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-between">
+                        <p className="text-[10px] text-emerald-600 uppercase font-bold tracking-widest mb-1 flex-shrink-0">{t.advance}</p>
+                        <p className="font-black text-emerald-700 text-lg tracking-tight truncate pl-4">{formatCurrency(activeProject.advancePayment, activeProject.currency)}</p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3"><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.timeExt}</p><p className="font-bold text-gray-800 text-sm">{activeProject.timeExtension || '-'}</p></div><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.costInc}</p><p className="font-bold text-gray-800 text-sm">{activeProject.costIncrease || '-'}</p></div></div>
