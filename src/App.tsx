@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import './index.css';
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -11,7 +12,7 @@ import {
   ChevronLeft, Building2, MapPin, Wallet, CalendarDays,
   Briefcase, FolderKanban, MoreVertical, FilePlus2, Upload,
   Calculator, HardHat, TrendingUp, TrendingDown, Target,
-  Lock, Mail, User, LogOut, Smartphone, CloudOff, Globe
+  Lock, Mail, User, LogOut, Smartphone, CloudOff, Globe, Banknote
 } from 'lucide-react';
 
 // --- FIREBASE BAŞLATMA ---
@@ -39,10 +40,10 @@ const appId = "premiumproje";
 // --- ÇOKLU DİL (i18n) SÖZLÜĞÜ ---
 const i18n = {
   tr: {
-    appTitle: "PMPP",
+    appTitle: "Ukurtcu Management",
     loginTitle1: "Premium Proje",
     loginTitle2: "Yönetim Paneli",
-    cloudSync: "PMPP",
+    cloudSync: "Ukurtcu Management",
     fullNameLabel: "Ad Soyad",
     fullNamePlaceholder: "Adınız Soyadınız",
     emailLabel: "E-Posta Adresi",
@@ -99,6 +100,7 @@ const i18n = {
     notePlaceholder: "Toplantı, saha durumu, revizyon talebi...",
     saveNote: "Notu Kaydet",
     newProject: "Yeni Proje Kartı",
+    editProject: "Proje Kartını Düzenle",
     basicInfo: "Temel Bilgiler",
     projectName: "Proje Adı *",
     client: "İdare / Müşteri",
@@ -107,9 +109,12 @@ const i18n = {
     contractDate: "Sözleşme Tarihi",
     durationDays: "Süresi (Gün)",
     totalBudget: "İşin Bedeli (Bütçe)",
+    advancePayment: "Avans Tutarı",
+    advance: "Avans",
     timeExt: "Süre Uzatımı",
     costInc: "İş Artış Tutarı",
     createProject: "Projeyi Oluştur",
+    saveChanges: "Değişiklikleri Kaydet",
     deleteProjectConfirm: "Bu projeyi ve içindeki tüm verileri kalıcı olarak silmek istediğinize emin misiniz?",
     deleteProjectBtn: "Projeyi Kalıcı Olarak Sil",
     deleteNoteConfirm: "Bu notu kalıcı olarak silmek istediğinize emin misiniz?",
@@ -126,10 +131,10 @@ const i18n = {
     late: "Gecikti:"
   },
   en: {
-    appTitle: "PMPP",
+    appTitle: "Ukurtcu Management",
     loginTitle1: "Premium Project",
     loginTitle2: "Management Panel",
-    cloudSync: "PMPP",
+    cloudSync: "Ukurtcu Management",
     fullNameLabel: "Full Name",
     fullNamePlaceholder: "John Doe",
     emailLabel: "Email Address",
@@ -186,6 +191,7 @@ const i18n = {
     notePlaceholder: "Meeting, site status, revision request...",
     saveNote: "Save Note",
     newProject: "New Project Card",
+    editProject: "Edit Project Card",
     basicInfo: "Basic Info",
     projectName: "Project Name *",
     client: "Client",
@@ -194,9 +200,12 @@ const i18n = {
     contractDate: "Contract Date",
     durationDays: "Duration (Days)",
     totalBudget: "Total Budget",
+    advancePayment: "Advance Payment",
+    advance: "Advance",
     timeExt: "Time Extension",
     costInc: "Cost Increase",
     createProject: "Create Project",
+    saveChanges: "Save Changes",
     deleteProjectConfirm: "Are you sure you want to permanently delete this project and all its data?",
     deleteProjectBtn: "Delete Project Permanently",
     deleteNoteConfirm: "Are you sure you want to permanently delete this note?",
@@ -352,6 +361,7 @@ export default function App() {
   
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isProjectFormOpen, setIsProjectFormOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState(null); // YENİ: Proje Düzenleme Modu
   const [isProjectInfoOpen, setIsProjectInfoOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   
@@ -365,7 +375,7 @@ export default function App() {
   const [targetPaymentInput, setTargetPaymentInput] = useState('');
 
   const [projectForm, setProjectForm] = useState({
-    name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: ''
+    name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: '', advancePayment: ''
   });
 
   const [isRecording, setIsRecording] = useState(false);
@@ -536,32 +546,84 @@ export default function App() {
   };
 
   // --- CRUD İŞLEMLERİ (Bulut + LocalStorage Desteği) ---
-  const handleCreateProject = async (e) => {
+  
+  // YENİ: Proje formunu kapatma ve sıfırlama fonksiyonu
+  const closeProjectForm = () => {
+    setIsProjectFormOpen(false);
+    setEditingProjectId(null);
+    setProjectForm({name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: '', advancePayment: ''});
+  };
+
+  // YENİ: Düzenleme modunu açma fonksiyonu
+  const openEditProject = () => {
+    if (!activeProject) return;
+    setProjectForm({
+      name: activeProject.name || '',
+      location: activeProject.location || '',
+      client: activeProject.client || '',
+      contractDate: activeProject.contractDate || getTodayStr(),
+      duration: activeProject.duration || '',
+      budget: activeProject.budget || '',
+      currency: activeProject.currency || 'TRY',
+      timeExtension: activeProject.timeExtension || '',
+      costIncrease: activeProject.costIncrease || '',
+      advancePayment: activeProject.advancePayment || ''
+    });
+    setEditingProjectId(activeProject.id);
+    setIsProjectInfoOpen(false);
+    setIsProjectFormOpen(true);
+  };
+
+  // GÜNCELLENDİ: Hem yeni proje oluşturma hem de mevcut projeyi güncelleme
+  const handleSaveProject = async (e) => {
     e.preventDefault();
     if (!projectForm.name.trim()) return;
     
-    const newProject = { 
-      cumulativePayment: 0, targetPayment: 0, ...projectForm, 
-      budget: Number(projectForm.budget) || 0, createdAt: Date.now()
+    const projectData = { 
+      ...projectForm, 
+      budget: Number(projectForm.budget) || 0,
+      advancePayment: Number(projectForm.advancePayment) || 0,
     };
 
-    if (!user || !db || isOfflineMode) {
-       const fallbackProject = { id: Date.now().toString(), ...newProject };
-       const updated = [fallbackProject, ...projects];
-       setProjects(updated);
-       localStorage.setItem('premium_projects', JSON.stringify(updated));
-       setIsProjectFormOpen(false);
-       enterProject(fallbackProject.id);
-       return;
-    }
+    if (editingProjectId) {
+      // GÜNCELLEME İŞLEMİ
+      if (!user || !db || isOfflineMode) {
+        const updated = projects.map(p => p.id === editingProjectId ? { ...p, ...projectData } : p);
+        setProjects(updated);
+        localStorage.setItem('premium_projects', JSON.stringify(updated));
+        closeProjectForm();
+        return;
+      }
+      try {
+        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'projects', editingProjectId), projectData);
+        closeProjectForm();
+      } catch (error) { 
+        console.error("Proje güncellenirken hata:", error); 
+        setErrorMessage("Güncelleme başarısız oldu.");
+      }
 
-    try {
-      const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'projects'), newProject);
-      setIsProjectFormOpen(false);
-      setProjectForm({name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: ''});
-      enterProject(docRef.id);
-    } catch (error) { 
-      console.error("Proje oluşturulurken hata:", error); 
+    } else {
+      // YENİ OLUŞTURMA İŞLEMİ
+      projectData.cumulativePayment = 0;
+      projectData.targetPayment = 0;
+      projectData.createdAt = Date.now();
+
+      if (!user || !db || isOfflineMode) {
+         const fallbackProject = { id: Date.now().toString(), ...projectData };
+         const updated = [fallbackProject, ...projects];
+         setProjects(updated);
+         localStorage.setItem('premium_projects', JSON.stringify(updated));
+         closeProjectForm();
+         enterProject(fallbackProject.id);
+         return;
+      }
+      try {
+        const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'projects'), projectData);
+        closeProjectForm();
+        enterProject(docRef.id);
+      } catch (error) { 
+        console.error("Proje oluşturulurken hata:", error); 
+      }
     }
   };
 
@@ -859,6 +921,14 @@ export default function App() {
                 <p className="font-extrabold text-emerald-700 text-sm tracking-tight">{formatCurrency(activeProject.cumulativePayment, activeProject.currency)}</p>
               </div>
             </div>
+            
+            {/* AVANS GÖSTERİMİ */}
+            {(activeProject.advancePayment > 0) && (
+              <div className="bg-blue-50/50 rounded-xl p-3 border border-blue-100 mb-5 flex justify-between items-center">
+                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1"><Banknote className="w-3 h-3"/> {t.advancePayment}</p>
+                <p className="font-extrabold text-blue-800 text-sm">{formatCurrency(activeProject.advancePayment, activeProject.currency)}</p>
+              </div>
+            )}
 
             <button onClick={() => { setPaymentInput(activeProject.cumulativePayment || ''); setTargetPaymentInput(activeProject.targetPayment || ''); setIsPaymentModalOpen(true); }} className="w-full bg-white border-2 border-blue-600 text-blue-700 py-3.5 rounded-xl font-bold text-sm hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 shadow-sm">
               <Calculator className="w-4 h-4" /> {t.updatePayment}
@@ -1176,11 +1246,11 @@ export default function App() {
           <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex flex-col justify-end">
             <div className="bg-white rounded-t-3xl h-[90vh] flex flex-col shadow-2xl">
               <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white z-10 rounded-t-3xl">
-                <div><h3 className="text-lg font-extrabold text-gray-900 tracking-tight">{t.newProject}</h3></div>
-                <button onClick={() => setIsProjectFormOpen(false)} className="bg-gray-100 p-2 rounded-xl active:bg-gray-200 text-gray-600"><X className="w-5 h-5" /></button>
+                <div><h3 className="text-lg font-extrabold text-gray-900 tracking-tight">{editingProjectId ? t.editProject : t.newProject}</h3></div>
+                <button onClick={closeProjectForm} className="bg-gray-100 p-2 rounded-xl active:bg-gray-200 text-gray-600"><X className="w-5 h-5" /></button>
               </div>
               <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-                <form id="new-project-form" onSubmit={handleCreateProject} className="space-y-6">
+                <form id="new-project-form" onSubmit={handleSaveProject} className="space-y-6">
                   <div className="space-y-4">
                     <h4 className="text-[11px] font-bold text-blue-700 uppercase tracking-widest flex items-center gap-1.5 border-b border-gray-100 pb-2"><Briefcase className="w-3.5 h-3.5"/> {t.basicInfo}</h4>
                     <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.projectName}</label><input required type="text" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-2 shadow-sm" /></div>
@@ -1193,13 +1263,21 @@ export default function App() {
                       <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.contractDate}</label><input type="date" value={projectForm.contractDate} onChange={e => setProjectForm({...projectForm, contractDate: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" /></div>
                       <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.durationDays}</label><input type="number" min="1" value={projectForm.duration} onChange={e => setProjectForm({...projectForm, duration: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" /></div>
                     </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.totalBudget}</label>
-                      <div className="flex gap-2">
-                        <select value={projectForm.currency} onChange={e => setProjectForm({...projectForm, currency: e.target.value})} className="w-24 bg-gray-50 border border-gray-300 rounded-xl px-2 py-3 text-sm font-extrabold focus:outline-none focus:border-blue-500"><option value="TRY">₺ (TL)</option><option value="USD">$ (USD)</option><option value="EUR">€ (EUR)</option></select>
-                        <input required type="number" value={projectForm.budget} onChange={e => setProjectForm({...projectForm, budget: e.target.value})} placeholder="0.00" className="flex-1 bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.totalBudget}</label>
+                        <div className="flex gap-2">
+                          <select value={projectForm.currency} onChange={e => setProjectForm({...projectForm, currency: e.target.value})} className="w-20 bg-gray-50 border border-gray-300 rounded-xl px-2 py-3 text-sm font-extrabold focus:outline-none focus:border-blue-500"><option value="TRY">₺</option><option value="USD">$</option><option value="EUR">€</option></select>
+                          <input required type="number" value={projectForm.budget} onChange={e => setProjectForm({...projectForm, budget: e.target.value})} placeholder="0.00" className="flex-1 w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
+                        </div>
+                      </div>
+                      <div>
+                         <label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.advancePayment}</label>
+                         <input type="number" value={projectForm.advancePayment} onChange={e => setProjectForm({...projectForm, advancePayment: e.target.value})} placeholder="0.00" className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
                       </div>
                     </div>
+                    
                     <div className="grid grid-cols-2 gap-3">
                       <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.timeExt}</label><input type="text" value={projectForm.timeExtension} onChange={e => setProjectForm({...projectForm, timeExtension: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" /></div>
                       <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.costInc}</label><input type="text" value={projectForm.costIncrease} onChange={e => setProjectForm({...projectForm, costIncrease: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" /></div>
@@ -1208,7 +1286,7 @@ export default function App() {
                 </form>
               </div>
               <div className="p-5 border-t border-gray-200 bg-gray-50 pb-safe">
-                <button type="submit" form="new-project-form" className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-md hover:bg-gray-800 active:scale-95 transition-transform text-sm tracking-wide flex justify-center items-center gap-2"><FilePlus2 className="w-4 h-4" /> {t.createProject}</button>
+                <button type="submit" form="new-project-form" className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-md hover:bg-gray-800 active:scale-95 transition-transform text-sm tracking-wide flex justify-center items-center gap-2"><FilePlus2 className="w-4 h-4" /> {editingProjectId ? t.saveChanges : t.createProject}</button>
               </div>
             </div>
           </div>
@@ -1217,15 +1295,31 @@ export default function App() {
         {isProjectInfoOpen && activeProject && (
           <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl relative">
-              <button onClick={() => setIsProjectInfoOpen(false)} className="absolute top-4 right-4 bg-gray-100 p-2 rounded-xl text-gray-600 z-10 hover:bg-gray-200"><X className="w-5 h-5" /></button>
+              
+              {/* DÜZENLE BUTONU EKLENDİ */}
+              <button onClick={openEditProject} className="absolute top-4 right-14 bg-blue-50 p-2 rounded-xl text-blue-600 z-10 hover:bg-blue-100 transition-colors shadow-sm"><Edit3 className="w-5 h-5" /></button>
+              <button onClick={() => setIsProjectInfoOpen(false)} className="absolute top-4 right-4 bg-gray-100 p-2 rounded-xl text-gray-600 z-10 hover:bg-gray-200 transition-colors shadow-sm"><X className="w-5 h-5" /></button>
+              
               <div className="p-6">
                 <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mb-4 border border-gray-200"><HardHat className="w-7 h-7 text-gray-700" /></div>
-                <h3 className="text-2xl font-extrabold text-gray-900 mb-1 tracking-tight">{activeProject.name}</h3>
+                <h3 className="text-2xl font-extrabold text-gray-900 mb-1 tracking-tight pr-20">{activeProject.name}</h3>
                 <p className="text-sm text-gray-500 font-semibold mb-6 flex items-center gap-1.5"><MapPin className="w-4 h-4"/> {activeProject.location || t.unspecified}</p>
                 <div className="space-y-3">
                   <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.client}</p><p className="font-bold text-gray-800 text-sm">{activeProject.client || '-'}</p></div>
                   <div className="grid grid-cols-2 gap-3"><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.contractDate}</p><p className="font-bold text-gray-800 text-sm">{formatDisplayDate(activeProject.contractDate) || '-'}</p></div><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.durationDays}</p><p className="font-bold text-gray-800 text-sm">{activeProject.duration ? `${activeProject.duration}` : '-'}</p></div></div>
-                  <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 shadow-sm"><p className="text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-1">{t.totalBudget}</p><p className="font-black text-blue-700 text-xl tracking-tight">{formatCurrency(activeProject.budget, activeProject.currency)}</p></div>
+                  
+                  {/* BÜTÇE VE AVANS YAN YANA */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm">
+                      <p className="text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-1">{t.totalBudget}</p>
+                      <p className="font-black text-blue-700 text-base tracking-tight">{formatCurrency(activeProject.budget, activeProject.currency)}</p>
+                    </div>
+                    <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm">
+                      <p className="text-[10px] text-emerald-600 uppercase font-bold tracking-widest mb-1">{t.advance}</p>
+                      <p className="font-black text-emerald-700 text-base tracking-tight">{formatCurrency(activeProject.advancePayment, activeProject.currency)}</p>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3"><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.timeExt}</p><p className="font-bold text-gray-800 text-sm">{activeProject.timeExtension || '-'}</p></div><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.costInc}</p><p className="font-bold text-gray-800 text-sm">{activeProject.costIncrease || '-'}</p></div></div>
                 </div>
                 <div className="mt-8 pt-5 border-t border-gray-100"><button onClick={() => {setIsProjectInfoOpen(false); deleteProject(activeProject.id);}} className="w-full flex items-center justify-center gap-2 text-red-600 font-bold text-sm p-4 bg-red-50 hover:bg-red-100 rounded-2xl transition-colors"><Trash2 className="w-4 h-4" /> {t.deleteProjectBtn}</button></div>
@@ -1260,4 +1354,5 @@ export default function App() {
     </div>
   );
 }
+
 
