@@ -23,12 +23,10 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     wbs: '', name: '', start: getTodayStr(), finish: getTodayStr(), progress: 0, predecessors: ''
   });
 
-  // --- SÜRÜKLE & BIRAK (DRAG & DROP) STATE'LERİ ---
-  const dragState = useRef({ isDragging: false, draggedTask: null, timer: null });
-  const [draggedTaskId, setDraggedTaskId] = useState(null);
-  const [dragOverTaskId, setDragOverTaskId] = useState(null);
+  // --- SÜRÜKLE BIRAK (DRAG & DROP) STATE'LERİ ---
+  const [dragState, setDragState] = useState({ isDragging: false, draggedId: null, overId: null });
 
-  // Veritabanı Dinleme (WBS'e göre akıllı sıralama)
+  // Veritabanı Dinleme (Sıralama "order" ve "wbs" önceliğine göre yapılır)
   useEffect(() => {
     if (!user || !db || isOfflineMode || !activeProject) return;
     const schedulesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'schedules');
@@ -36,7 +34,10 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
       const allData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const projectSchedules = allData
         .filter(s => s.projectId === activeProject.id)
-        .sort((a, b) => a.wbs.localeCompare(b.wbs, undefined, { numeric: true, sensitivity: 'base' }));
+        .sort((a, b) => {
+          if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+          return a.wbs.localeCompare(b.wbs, undefined, { numeric: true, sensitivity: 'base' });
+        });
       
       setSchedules(projectSchedules);
       
@@ -49,21 +50,110 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     return () => unsub();
   }, [user, isOfflineMode, activeProject]);
 
-  // Offline Okuma Desteği
-  useEffect(() => {
-    if (isOfflineMode) {
-      try {
-        const local = JSON.parse(localStorage.getItem('premium_schedules')) || [];
-        setSchedules(
-          local.filter(s => s.projectId === activeProject?.id)
-               .sort((a, b) => a.wbs.localeCompare(b.wbs, undefined, { numeric: true, sensitivity: 'base' }))
-        );
-      } catch(e) {}
+
+  // --- SÜRÜKLE & BIRAK MOTORU (Mobil ve Desktop Uyumlu) ---
+  
+  const handlePointerDown = (e, task) => {
+    // Sürükleme işlemi için parmak veya mouse'u kilitle (yakala)
+    e.target.setPointerCapture(e.pointerId);
+    setDragState({ isDragging: true, draggedId: task.id, overId: task.id });
+    if (navigator.vibrate) navigator.vibrate(40); // Mobil titreşim
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragState.isDragging) return;
+    
+    // Parmağın altındaki elementi bul
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const row = el?.closest('tr[data-id]');
+    
+    if (row) {
+      const targetId = row.getAttribute('data-id');
+      if (targetId !== dragState.overId) {
+        setDragState(prev => ({ ...prev, overId: targetId }));
+      }
     }
-  }, [isOfflineMode, activeProject]);
+  };
+
+  const handlePointerUp = async (e) => {
+    e.target.releasePointerCapture(e.pointerId);
+    
+    if (dragState.isDragging && dragState.draggedId && dragState.overId && dragState.draggedId !== dragState.overId) {
+      await executeReorder(dragState.draggedId, dragState.overId);
+    }
+    
+    setDragState({ isDragging: false, draggedId: null, overId: null });
+  };
+
+  // --- MS PROJECT MANTIKLI YENİDEN SIRALAMA VE WBS HESAPLAMA ---
+  const executeReorder = async (sourceId, targetId) => {
+    const sourceTask = schedules.find(t => t.id === sourceId);
+    const targetTask = schedules.find(t => t.id === targetId);
+    if (!sourceTask || !targetTask) return;
+
+    // 1. Taşınan görevi ve onun ALT GÖREVLERİNİ bir "Blok" olarak ayır
+    const blockToMove = schedules.filter(t => t.id === sourceId || t.wbs.startsWith(sourceTask.wbs + '.'));
+    const remainingTasks = schedules.filter(t => !blockToMove.some(b => b.id === t.id));
+
+    const originalSourceIndex = schedules.findIndex(t => t.id === sourceId);
+    const originalTargetIndex = schedules.findIndex(t => t.id === targetId);
+    const isDraggingDown = originalSourceIndex < originalTargetIndex;
+
+    // 2. Yeni hedef indeksi bul
+    let dropIndex = remainingTasks.findIndex(t => t.id === targetId);
+    
+    // Eğer aşağı doğru sürüklüyorsak, hedefin ve onun alt görevlerinin "sonuna" ekle
+    if (isDraggingDown) {
+      const targetBlock = remainingTasks.filter(t => t.id === targetId || t.wbs.startsWith(targetTask.wbs + '.'));
+      const lastTargetItem = targetBlock[targetBlock.length - 1];
+      dropIndex = remainingTasks.findIndex(t => t.id === lastTargetItem.id) + 1;
+    }
+
+    // 3. Diziyi yeni sırayla birleştir
+    const newOrder = [
+      ...remainingTasks.slice(0, dropIndex),
+      ...blockToMove,
+      ...remainingTasks.slice(dropIndex)
+    ];
+
+    // 4. OTOMATİK WBS VE ORDER (SIRA) ÜRETİCİ
+    const counters = {};
+    const updatedTasks = newOrder.map((task, index) => {
+      // Daha alt seviyeleri temizle (Örn: level 1'deysek level 2 ve 3 sıfırlanır)
+      Object.keys(counters).forEach(k => {
+        if (parseInt(k) > task.level) delete counters[k];
+      });
+      // Bulunduğumuz seviyeyi artır
+      counters[task.level] = (counters[task.level] || 0) + 1;
+
+      // Yeni WBS'i oluştur (Örn: 1.2.3)
+      let newWbs = '';
+      for (let i = 0; i <= task.level; i++) {
+        newWbs += (counters[i] || 1) + (i < task.level ? '.' : '');
+      }
+      
+      return { ...task, wbs: newWbs, order: index };
+    });
+
+    // 5. Ekranı anında güncelle (Kullanıcı beklemesin)
+    setSchedules(updatedTasks);
+
+    // 6. Firebase Veritabanını Arka Planda Güncelle
+    try {
+      const promises = updatedTasks.map(t => 
+         updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', t.id), { 
+           wbs: t.wbs, 
+           order: t.order 
+         })
+      );
+      await Promise.all(promises);
+    } catch(err) {
+      console.error("Sıralama hatası:", err);
+    }
+  };
 
 
-  // --- AKILLI WBS HESAPLAMA MOTORU (Ekleme İçin) ---
+  // --- AKILLI WBS HESAPLAYICI (YENİ EKLENENLER İÇİN) ---
   const generateNextWbs = (targetWbs, actionType) => {
     if (schedules.length === 0) return '1';
     if (actionType === 'root') {
@@ -91,120 +181,11 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     return '1';
   };
 
-  // --- SÜRÜKLE BIRAK (DRAG & DROP) MOTORU ---
-  
-  const handlePointerDown = (e, task) => {
-    // Sadece sol tık veya dokunma algıla
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    
-    dragState.current.timer = setTimeout(() => {
-      dragState.current.isDragging = true;
-      dragState.current.draggedTask = task;
-      setDraggedTaskId(task.id);
-      setDragOverTaskId(task.id);
-      
-      if (navigator.vibrate) navigator.vibrate(50); // Titreşim hissi
-      document.body.style.overflow = 'hidden'; // Ekranın kaymasını engelle
-      document.body.style.touchAction = 'none';
-    }, 400); // 400ms basılı tutunca taşıma başlar
-  };
 
-  const handlePointerMove = (e) => {
-    if (!dragState.current.isDragging) {
-      clearTimeout(dragState.current.timer); // Eğer basılı tutarken kaydırırsa iptal et (Normal scroll)
-      return;
-    }
-    
-    // Parmak hangi satırın üzerinde bul
-    const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-    const row = targetEl?.closest('tr[data-task-id]');
-    if (row) {
-      const hoverId = row.getAttribute('data-task-id');
-      if (hoverId !== dragOverTaskId) setDragOverTaskId(hoverId);
-    }
-  };
-
-  const handlePointerUp = () => {
-    clearTimeout(dragState.current.timer);
-    document.body.style.overflow = '';
-    document.body.style.touchAction = '';
-    
-    if (dragState.current.isDragging) {
-      const sourceId = dragState.current.draggedTask.id;
-      const targetId = dragOverTaskId;
-      
-      if (sourceId && targetId && sourceId !== targetId) {
-        executeReorder(sourceId, targetId);
-      }
-      
-      dragState.current.isDragging = false;
-      dragState.current.draggedTask = null;
-      setDraggedTaskId(null);
-      setDragOverTaskId(null);
-    }
-  };
-
-  // Bütün İş Programını MS Project Mantığıyla Yeniden Sıralama
-  const executeReorder = async (sourceId, targetId) => {
-    const sourceTask = schedules.find(t => t.id === sourceId);
-    const targetTask = schedules.find(t => t.id === targetId);
-    if (!sourceTask || !targetTask) return;
-
-    // Taşınan Görevi VE Tüm Alt Görevlerini "Blok" Olarak Al
-    const blockToMove = schedules.filter(t => t.id === sourceId || t.wbs.startsWith(sourceTask.wbs + '.'));
-    const remainingTasks = schedules.filter(t => !blockToMove.some(b => b.id === t.id));
-
-    const originalSourceIndex = schedules.findIndex(t => t.id === sourceId);
-    const originalTargetIndex = schedules.findIndex(t => t.id === targetId);
-    const isDraggingDown = originalSourceIndex < originalTargetIndex;
-
-    let dropIndex = remainingTasks.findIndex(t => t.id === targetId);
-    
-    if (isDraggingDown) {
-      // Eğer aşağı çekiyorsak, hedef görevin (ve onun alt görevlerinin) EN ALTINA yerleştir
-      const targetBlock = remainingTasks.filter(t => t.id === targetId || t.wbs.startsWith(targetTask.wbs + '.'));
-      const lastTargetItem = targetBlock[targetBlock.length - 1];
-      dropIndex = remainingTasks.findIndex(t => t.id === lastTargetItem.id) + 1;
-    }
-
-    const newOrder = [
-      ...remainingTasks.slice(0, dropIndex),
-      ...blockToMove,
-      ...remainingTasks.slice(dropIndex)
-    ];
-
-    // Yeni Sıralamaya Göre TÜM WBS KODLARINI BAŞTAN AŞAĞI HESAPLA
-    let counters = {};
-    const updatedTasks = newOrder.map(task => {
-      Object.keys(counters).forEach(k => {
-        if (parseInt(k) > task.level) delete counters[k]; // Alt seviyeleri sıfırla
-      });
-      counters[task.level] = (counters[task.level] || 0) + 1;
-
-      let newWbs = '';
-      for (let i = 0; i <= task.level; i++) {
-        newWbs += (counters[i] || 1) + (i < task.level ? '.' : '');
-      }
-      return { ...task, wbs: newWbs };
-    });
-
-    // Veritabanını Toplu Olarak Güncelle
-    try {
-      const promises = updatedTasks.map(t => 
-         updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', t.id), { wbs: t.wbs })
-      );
-      await Promise.all(promises);
-    } catch(err) {
-      console.error("Sıralama hatası:", err);
-    }
-  };
-
-
-  // --- XML YÜKLEME ---
+  // --- DİĞER MODÜL FONKSİYONLARI ---
   const handleScheduleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !activeProject) return;
-
     setIsScheduleLoading(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -222,6 +203,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
         }
 
         const parsedTasks = [];
+        let orderCounter = 0;
         for (let i = 0; i < taskNodes.length; i++) {
           const node = taskNodes[i];
           const getVal = (tag) => node.getElementsByTagName(tag)[0]?.textContent || '';
@@ -243,7 +225,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
           if (name && wbs) {
             parsedTasks.push({
-              projectId: activeProject.id, uid: uid, wbs: wbs, name: name,
+              projectId: activeProject.id, uid: uid, wbs: wbs, name: name, order: orderCounter++,
               start: startStr, finish: finishStr, progress: progress, 
               level: outlineLevel - 1, predecessors: predecessorsArray.join(', ')
             });
@@ -264,14 +246,11 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
           for (const item of toDelete) { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', item.id)); }
           for (const item of parsedTasks) { await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'schedules'), item); }
         } else { alert("Geçersiz XML Formatı"); }
-      } catch (error) { console.error(error); alert("Okuma Hatası");
-      } finally { setIsScheduleLoading(false); e.target.value = null; }
+      } catch (error) { console.error(error); alert("Okuma Hatası"); } finally { setIsScheduleLoading(false); e.target.value = null; }
     };
     reader.readAsText(file);
   };
 
-
-  // --- GÖREV MODALI AÇILIŞLARI ---
   const openAddRootTask = () => {
     const newWbs = generateNextWbs(null, 'root');
     setTaskForm({ wbs: newWbs, name: '', start: getTodayStr(), finish: getTodayStr(), progress: 0, predecessors: '' });
@@ -314,6 +293,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
       finish: taskForm.finish,
       progress: Number(taskForm.progress) || 0,
       level: level,
+      order: schedules.length, // Sona ekle, WBS motoru zaten sıralayacak
       predecessors: taskForm.predecessors || '',
       uid: modalConfig.mode === 'edit' ? schedules.find(s=>s.id === editingTaskId)?.uid : Date.now().toString()
     };
@@ -338,7 +318,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     }
   };
 
-  // --- DIŞA AKTARMA VE İLERLEME HESAPLARI ---
   const handleExportScheduleCSV = () => {
     if (schedules.length === 0) return alert("Veri yok");
     const headers = [`WBS,Görev Adı,Süre(Gün),Başlangıç,Bitiş,İlerleme(%),Öncüller`];
@@ -361,6 +340,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     }
     return 0;
   };
+
 
   return (
     <div className="pb-28 animate-in fade-in duration-300">
@@ -403,7 +383,8 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
       {/* TABLO BÖLÜMÜ */}
       <div className="px-4">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col relative">
+          
           {isScheduleLoading && <p className="text-center py-10 text-gray-500 font-bold animate-pulse">{t?.readingFile || 'Okunuyor...'}</p>}
           
           {!isScheduleLoading && schedules.length === 0 && (
@@ -416,18 +397,20 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
           
           {!isScheduleLoading && schedules.length > 0 && (
             <div className="overflow-x-auto pb-2">
-              <table className="w-full text-left text-xs whitespace-nowrap select-none" style={{ WebkitTouchCallout: 'none' }}>
+              <table className="w-full text-left text-xs whitespace-nowrap select-none">
                 <thead className="bg-gray-100/80 text-gray-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-200">
                   <tr>
-                    <th className="px-2 py-3 w-8 text-center sticky left-0 bg-gray-100/90 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)]"></th>
-                    <th className="px-2 py-3 min-w-[40px]">WBS</th>
-                    <th className="px-2 py-3 min-w-[200px]">{t?.taskNameCol || 'Görev'}</th>
-                    <th className="px-2 py-3 text-center">{t?.durationCol || 'Süre'}</th>
-                    <th className="px-2 py-3">{t?.startCol || 'Başlangıç'}</th>
-                    <th className="px-2 py-3">{t?.finishCol || 'Bitiş'}</th>
-                    <th className="px-2 py-3 min-w-[80px] text-center">%</th>
-                    <th className="px-2 py-3 text-center">Öncül</th>
-                    <th className="px-2 py-3 text-center min-w-[120px]">İşlem</th>
+                    {/* Sürükle Bırak Kolonu */}
+                    <th className="p-3 w-8 text-center sticky left-0 bg-gray-100/90 z-20 shadow-[1px_0_0_rgba(0,0,0,0.05)]"></th>
+                    <th className="p-3 w-8 text-center bg-gray-100/90 z-10"></th>
+                    <th className="p-3 min-w-[50px]">WBS</th>
+                    <th className="p-3 min-w-[200px]">{t?.taskNameCol || 'Görev'}</th>
+                    <th className="p-3 text-center">{t?.durationCol || 'Süre'}</th>
+                    <th className="p-3">{t?.startCol || 'Başlangıç'}</th>
+                    <th className="p-3">{t?.finishCol || 'Bitiş'}</th>
+                    <th className="p-3 min-w-[80px] text-center">%</th>
+                    <th className="p-3 text-center">Öncül</th>
+                    <th className="p-3 text-center min-w-[120px]">İşlem</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -443,58 +426,65 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
                     const isRoot = task.level === 0;
                     
-                    // Sürükle Bırak Durumları
-                    const isDraggingThis = draggedTaskId === task.id;
-                    const isDragOverThis = dragOverTaskId === task.id;
+                    // Görsel Stiller
+                    const isDraggingThis = dragState.draggedId === task.id;
+                    const isDragOverThis = dragState.overId === task.id && !isDraggingThis;
                     
                     let rowClass = isRoot ? 'bg-blue-50/30' : 'hover:bg-gray-50';
-                    if (isDraggingThis) rowClass = 'opacity-50 scale-[0.98] bg-blue-100 shadow-inner z-50 relative';
-                    if (isDragOverThis && !isDraggingThis) rowClass = 'border-t-4 border-blue-600 bg-blue-50';
+                    if (isDraggingThis) rowClass = 'opacity-50 bg-amber-50';
+                    if (isDragOverThis) rowClass = 'border-t-4 border-blue-500 bg-blue-50/50';
 
                     const textClass = isRoot ? 'font-extrabold text-gray-900' : task.level === 1 ? 'font-bold text-gray-800' : 'font-medium text-gray-600';
 
                     return (
                       <tr 
                         key={task.id} 
-                        data-task-id={task.id}
-                        onPointerDown={(e) => handlePointerDown(e, task)}
-                        onPointerMove={handlePointerMove}
-                        onPointerUp={handlePointerUp}
-                        onPointerCancel={handlePointerUp}
-                        onContextMenu={(e) => { if (window.innerWidth < 1024) e.preventDefault(); }} // Mobildeki standart basılı tutma menüsünü engeller
-                        className={`transition-all duration-200 cursor-grab active:cursor-grabbing ${rowClass}`}
+                        data-id={task.id}
+                        className={`transition-colors ${rowClass}`}
                       >
-                        
-                        <td className="px-2 py-2.5 text-center sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)] bg-inherit">
-                           <div className="flex items-center justify-center gap-1">
-                             <GripVertical className="w-3 h-3 text-gray-300" />
-                             <button onClick={(e) => { e.stopPropagation(); hasChildren && toggleScheduleNode(task.uid); }}>
-                               {hasChildren ? (isExpanded ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />) : <span className="inline-block w-4"></span>}
-                             </button>
-                           </div>
-                        </td>
-                        
-                        <td className="px-2 py-2.5 text-[10px] font-bold text-blue-600 pointer-events-none">{task.wbs}</td>
-                        <td className={`px-2 py-2.5 truncate max-w-[250px] pointer-events-none ${textClass}`} style={{ paddingLeft: `${Math.max(8, task.level * 16)}px` }}>{task.name}</td>
-                        <td className="px-2 py-2.5 text-center font-bold text-gray-600 pointer-events-none">{calculateDays(task.start, task.finish)}</td>
-                        <td className="px-2 py-2.5 text-gray-500 font-medium pointer-events-none">{task.start ? task.start.substring(5) : '-'}</td>
-                        <td className="px-2 py-2.5 text-gray-500 font-medium pointer-events-none">{task.finish ? task.finish.substring(5) : '-'}</td>
-                        
-                        <td className="px-2 py-2.5 pointer-events-none">
-                          <span className={`text-[10px] font-bold w-full block text-center ${task.progress === 100 ? 'text-emerald-600 bg-emerald-50 rounded px-1' : 'text-gray-700'}`}>%{task.progress}</span>
+                        {/* TUTAMAÇ (DRAG HANDLE) HÜCRESİ */}
+                        <td 
+                          className="px-1 py-2 text-center sticky left-0 z-20 bg-inherit shadow-[1px_0_0_rgba(0,0,0,0.05)] cursor-grab active:cursor-grabbing"
+                          style={{ touchAction: 'none' }} // Mobilde bu kısma dokununca sayfanın kaymasını engeller!
+                          onPointerDown={(e) => handlePointerDown(e, task)}
+                          onPointerMove={handlePointerMove}
+                          onPointerUp={handlePointerUp}
+                          onPointerCancel={handlePointerUp}
+                        >
+                          <GripVertical className={`w-4 h-4 mx-auto ${isDraggingThis ? 'text-amber-500' : 'text-gray-300'}`} />
                         </td>
 
-                        <td className="px-2 py-2.5 text-center text-[10px] font-bold text-blue-500 pointer-events-none">
+                        {/* AÇ/KAPA HÜCRESİ */}
+                        <td className="p-2 text-center" onClick={() => hasChildren && toggleScheduleNode(task.uid)}>
+                           {hasChildren ? (isExpanded ? <ChevronDown className="w-4 h-4 mx-auto text-gray-500" /> : <ChevronRight className="w-4 h-4 mx-auto text-gray-500" />) : <span className="inline-block w-4"></span>}
+                        </td>
+                        
+                        <td className="p-3 text-[10px] font-bold text-blue-600">{task.wbs}</td>
+                        <td className={`p-3 truncate max-w-[250px] ${textClass}`} style={{ paddingLeft: `${Math.max(4, task.level * 16)}px` }}>{task.name}</td>
+                        <td className="p-3 text-center font-bold text-gray-600">{calculateDays(task.start, task.finish)}</td>
+                        <td className="p-3 text-gray-500 font-medium">{task.start ? task.start.substring(5) : '-'}</td>
+                        <td className="p-3 text-gray-500 font-medium">{task.finish ? task.finish.substring(5) : '-'}</td>
+                        
+                        <td className="p-3">
+                          <div className="flex items-center gap-2 w-full">
+                            <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${task.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${task.progress}%` }}></div>
+                            </div>
+                            <span className={`text-[10px] font-bold w-7 text-right ${task.progress === 100 ? 'text-emerald-600' : 'text-gray-700'}`}>%{task.progress}</span>
+                          </div>
+                        </td>
+
+                        <td className="p-3 text-center text-[10px] font-bold text-blue-500">
                           {task.predecessors ? (<div className="flex items-center justify-center gap-0.5"><LinkIcon className="w-3 h-3 text-gray-400"/> {task.predecessors}</div>) : '-'}
                         </td>
 
                         {/* HIZLI İŞLEMLER */}
                         <td className="px-2 py-1.5 text-center border-l border-gray-100 bg-white/50">
                            <div className="flex items-center justify-center gap-1.5">
-                             <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAddChildTask(task); }} title="Alt İş Kalemi Ekle" className="p-1.5 text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 rounded-md transition-colors"><CornerDownRight className="w-3.5 h-3.5" /></button>
-                             <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openAddSiblingTask(task); }} title="Aynı Seviyeye İş Ekle" className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 bg-emerald-50 rounded-md transition-colors"><Plus className="w-3.5 h-3.5" /></button>
-                             <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e) => { e.stopPropagation(); openEditTaskModal(task); }} title="Düzenle" className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 bg-gray-100 rounded-md transition-colors ml-1"><Edit3 className="w-3.5 h-3.5" /></button>
-                             <button onPointerDown={(e)=>e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id, task.wbs); }} title="Sil" className="p-1.5 text-red-500 hover:text-white hover:bg-red-600 bg-red-50 rounded-md transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                             <button onClick={() => openAddChildTask(task)} title="Alt İş Kalemi Ekle" className="p-1.5 text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 rounded-md transition-colors"><CornerDownRight className="w-3.5 h-3.5" /></button>
+                             <button onClick={() => openAddSiblingTask(task)} title="Aynı Seviyeye İş Ekle" className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 bg-emerald-50 rounded-md transition-colors"><Plus className="w-3.5 h-3.5" /></button>
+                             <button onClick={() => openEditTaskModal(task)} title="Düzenle" className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 bg-gray-100 rounded-md transition-colors ml-1"><Edit3 className="w-3.5 h-3.5" /></button>
+                             <button onClick={() => handleDeleteTask(task.id, task.wbs)} title="Sil" className="p-1.5 text-red-500 hover:text-white hover:bg-red-600 bg-red-50 rounded-md transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                            </div>
                         </td>
 
@@ -506,7 +496,12 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
             </div>
           )}
         </div>
-        {!isScheduleLoading && schedules.length > 0 && <p className="text-[10px] text-center text-gray-400 mt-3 px-4"><AlertCircle className="w-3 h-3 inline mr-1"/> Görevin yerini değiştirmek için satırın üzerine basılı tutun ve taşıyın.</p>}
+        {!isScheduleLoading && schedules.length > 0 && (
+          <p className="text-[10px] text-center text-gray-400 mt-3 px-4 flex items-center justify-center gap-1">
+             <AlertCircle className="w-3 h-3"/> 
+             Görevi taşımak için en soldaki 6 noktalı tutamaca (grip) basılı tutup sürükleyin.
+          </p>
+        )}
       </div>
 
       {/* GÖREV EKLEME/DÜZENLEME MODALI */}
