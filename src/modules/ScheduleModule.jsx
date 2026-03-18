@@ -3,7 +3,7 @@ import { collection, doc, onSnapshot, addDoc, deleteDoc, updateDoc } from 'fireb
 import { 
   Upload, Download, FileSpreadsheet, Activity, 
   ChevronDown, ChevronRight, AlertCircle, Plus, Trash2, X, Edit3,
-  CornerDownRight, GitMerge, ListPlus
+  CornerDownRight, GitMerge, ListPlus, ArrowUp, ArrowDown, Link as LinkIcon
 } from 'lucide-react';
 import { calculateDays } from '../helpers';
 
@@ -17,10 +17,10 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
   // Modal State'leri
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [modalConfig, setModalConfig] = useState({ mode: 'add', title: '' }); // 'add' veya 'edit'
+  const [modalConfig, setModalConfig] = useState({ mode: 'add', title: '' }); 
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [taskForm, setTaskForm] = useState({
-    wbs: '', name: '', start: getTodayStr(), finish: getTodayStr(), progress: 0
+    wbs: '', name: '', start: getTodayStr(), finish: getTodayStr(), progress: 0, predecessors: ''
   });
 
   // Veritabanı Dinleme (WBS'e göre akıllı sıralama: 1.2, 1.10'dan önce gelir)
@@ -63,7 +63,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     if (schedules.length === 0) return '1';
 
     if (actionType === 'root') {
-      // Sadece ana başlıkları bul (1, 2, 3...)
       const rootTasks = schedules.filter(s => !s.wbs.includes('.'));
       if (rootTasks.length === 0) return '1';
       const maxRoot = Math.max(...rootTasks.map(s => parseInt(s.wbs)));
@@ -71,7 +70,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     }
 
     if (actionType === 'child') {
-      // Seçilen hedefin alt görevlerini bul (Örn: Hedef 1.2 ise 1.2.1, 1.2.2'yi bul)
       const targetLevelCount = targetWbs.split('.').length;
       const children = schedules.filter(s => s.wbs.startsWith(`${targetWbs}.`) && s.wbs.split('.').length === targetLevelCount + 1);
       if (children.length === 0) return `${targetWbs}.1`;
@@ -81,23 +79,68 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
     if (actionType === 'sibling') {
       const parts = targetWbs.split('.');
-      if (parts.length === 1) { 
-         // Ana başlığın yanına ekleniyorsa
-         return generateNextWbs(null, 'root');
-      }
-      // Alt başlığın yanına ekleniyorsa (Örn: Hedef 1.2.1 ise 1.2 altındaki kardeşleri bul)
+      if (parts.length === 1) return generateNextWbs(null, 'root');
       parts.pop();
       const parentWbs = parts.join('.');
       const siblings = schedules.filter(s => s.wbs.startsWith(`${parentWbs}.`) && s.wbs.split('.').length === parentWbs.split('.').length + 1);
       const maxSibling = Math.max(...siblings.map(s => parseInt(s.wbs.split('.').pop())));
       return `${parentWbs}.${maxSibling + 1}`;
     }
-    
     return '1';
   };
 
+  // --- YUKARI / AŞAĞI TAŞIMA (WBS DEĞİŞTİRME) MOTORU ---
+  const handleMoveTask = async (task, direction) => {
+    // Aynı seviyedeki kardeşleri (siblings) bul
+    const parentWbs = task.wbs.includes('.') ? task.wbs.substring(0, task.wbs.lastIndexOf('.')) : '';
+    const siblings = schedules.filter(s => {
+      const sParent = s.wbs.includes('.') ? s.wbs.substring(0, s.wbs.lastIndexOf('.')) : '';
+      return sParent === parentWbs;
+    }).sort((a, b) => a.wbs.localeCompare(b.wbs, undefined, { numeric: true }));
 
-  // --- XML YÜKLEME ---
+    const currentIndex = siblings.findIndex(s => s.id === task.id);
+    
+    // Zaten en üstte veya en alttaysa işlem yapma
+    if (direction === 'up' && currentIndex === 0) return;
+    if (direction === 'down' && currentIndex === siblings.length - 1) return;
+
+    const targetSibling = direction === 'up' ? siblings[currentIndex - 1] : siblings[currentIndex + 1];
+
+    const prefixA = task.wbs;
+    const prefixB = targetSibling.wbs;
+    const tasksToUpdate = [];
+
+    // Seçilen görevin ve kardeşinin altındaki TÜM görevlerin WBS'lerini birbirleriyle değiştir
+    schedules.forEach(s => {
+      let newWbs = s.wbs;
+      let changed = false;
+
+      if (s.wbs === prefixA || s.wbs.startsWith(prefixA + '.')) {
+        newWbs = prefixB + s.wbs.substring(prefixA.length);
+        changed = true;
+      } else if (s.wbs === prefixB || s.wbs.startsWith(prefixB + '.')) {
+        newWbs = prefixA + s.wbs.substring(prefixB.length);
+        changed = true;
+      }
+
+      if (changed) {
+        tasksToUpdate.push({ id: s.id, wbs: newWbs });
+      }
+    });
+
+    // Veritabanını güncelle
+    try {
+      const promises = tasksToUpdate.map(update => 
+        updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', update.id), { wbs: update.wbs })
+      );
+      await Promise.all(promises);
+    } catch (error) {
+      console.error("Taşıma sırasında hata:", error);
+    }
+  };
+
+
+  // --- XML YÜKLEME (Öncüller / Predecessors Desteği Eklendi) ---
   const handleScheduleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !activeProject) return;
@@ -110,11 +153,22 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
         const taskNodes = xmlDoc.getElementsByTagName("Task");
+        
+        // 1. Tur: UID'leri WBS'e eşlemek için sözlük oluştur
+        const uidToWbsMap = {};
+        for (let i = 0; i < taskNodes.length; i++) {
+          const uid = taskNodes[i].getElementsByTagName("UID")[0]?.textContent;
+          const wbs = taskNodes[i].getElementsByTagName("WBS")[0]?.textContent;
+          if (uid && wbs) uidToWbsMap[uid] = wbs;
+        }
+
         const parsedTasks = [];
 
+        // 2. Tur: Görevleri ve öncülleri oku
         for (let i = 0; i < taskNodes.length; i++) {
           const node = taskNodes[i];
           const getVal = (tag) => node.getElementsByTagName(tag)[0]?.textContent || '';
+          
           const uid = getVal("UID") || Date.now().toString() + i;
           const name = getVal("Name");
           const startStr = getVal("Start") ? getVal("Start").split('T')[0] : '';
@@ -123,10 +177,21 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
           const wbs = getVal("WBS");
           const outlineLevel = parseInt(getVal("OutlineLevel")) || 1;
 
+          // Öncülleri (PredecessorLink) Oku
+          const predNodes = node.getElementsByTagName("PredecessorLink");
+          const predecessorsArray = [];
+          for (let j = 0; j < predNodes.length; j++) {
+            const pUid = predNodes[j].getElementsByTagName("PredecessorUID")[0]?.textContent;
+            if (pUid && uidToWbsMap[pUid]) {
+              predecessorsArray.push(uidToWbsMap[pUid]); // WBS olarak kaydet
+            }
+          }
+
           if (name && wbs) {
             parsedTasks.push({
               projectId: activeProject.id, uid: uid, wbs: wbs, name: name,
-              start: startStr, finish: finishStr, progress: progress, level: outlineLevel - 1 
+              start: startStr, finish: finishStr, progress: progress, 
+              level: outlineLevel - 1, predecessors: predecessorsArray.join(', ')
             });
           }
         }
@@ -153,37 +218,30 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
 
   // --- GÖREV MODALI AÇILIŞLARI ---
-  
-  // 1. Yeni Ana İş Kalemi (Root Task) Ekleme
   const openAddRootTask = () => {
     const newWbs = generateNextWbs(null, 'root');
-    setTaskForm({ wbs: newWbs, name: '', start: getTodayStr(), finish: getTodayStr(), progress: 0 });
+    setTaskForm({ wbs: newWbs, name: '', start: getTodayStr(), finish: getTodayStr(), progress: 0, predecessors: '' });
     setModalConfig({ mode: 'add', title: 'Ana İş Kalemi Ekle' });
     setIsTaskModalOpen(true);
   };
 
-  // 2. Aynı Seviyeye Görev Ekleme (Sibling Task)
   const openAddSiblingTask = (targetTask) => {
     const newWbs = generateNextWbs(targetTask.wbs, 'sibling');
-    setTaskForm({ wbs: newWbs, name: '', start: targetTask.start || getTodayStr(), finish: targetTask.finish || getTodayStr(), progress: 0 });
+    setTaskForm({ wbs: newWbs, name: '', start: targetTask.start || getTodayStr(), finish: targetTask.finish || getTodayStr(), progress: 0, predecessors: '' });
     setModalConfig({ mode: 'add', title: 'Aynı Seviyeye İş Ekle' });
     setIsTaskModalOpen(true);
   };
 
-  // 3. Alt Görev Ekleme (Child Task)
   const openAddChildTask = (targetTask) => {
     const newWbs = generateNextWbs(targetTask.wbs, 'child');
-    setTaskForm({ wbs: newWbs, name: '', start: targetTask.start || getTodayStr(), finish: targetTask.finish || getTodayStr(), progress: 0 });
+    setTaskForm({ wbs: newWbs, name: '', start: targetTask.start || getTodayStr(), finish: targetTask.finish || getTodayStr(), progress: 0, predecessors: '' });
     setModalConfig({ mode: 'add', title: 'Alt İş Kalemi Ekle' });
-    
-    // Alt görev eklerken üst görevin satırını otomatik olarak genişlet (aç)
     setExpandedScheduleNodes(prev => ({...prev, [targetTask.uid]: true}));
     setIsTaskModalOpen(true);
   };
 
-  // 4. Mevcut Görevi Düzenleme
   const openEditTaskModal = (task) => {
-    setTaskForm({ wbs: task.wbs, name: task.name, start: task.start || '', finish: task.finish || '', progress: task.progress });
+    setTaskForm({ wbs: task.wbs, name: task.name, start: task.start || '', finish: task.finish || '', progress: task.progress, predecessors: task.predecessors || '' });
     setEditingTaskId(task.id);
     setModalConfig({ mode: 'edit', title: 'Görevi Düzenle' });
     setIsTaskModalOpen(true);
@@ -194,9 +252,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     e.preventDefault();
     if (!taskForm.name.trim()) return;
 
-    // Level hesaplama: 1 -> 0. level, 1.1 -> 1. level
     const level = taskForm.wbs.split('.').length - 1;
-
     const taskData = {
       projectId: activeProject.id,
       wbs: taskForm.wbs,
@@ -205,6 +261,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
       finish: taskForm.finish,
       progress: Number(taskForm.progress) || 0,
       level: level,
+      predecessors: taskForm.predecessors || '',
       uid: modalConfig.mode === 'edit' ? schedules.find(s=>s.id === editingTaskId)?.uid : Date.now().toString()
     };
 
@@ -213,27 +270,19 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
         await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', editingTaskId), taskData);
       } else {
         await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'schedules'), taskData);
-        // Yeni eklenen görevi varsayılan olarak açık yap
         setExpandedScheduleNodes(prev => ({...prev, [taskData.uid]: true}));
       }
       setIsTaskModalOpen(false);
-    } catch (error) {
-      console.error("Görev kaydedilemedi:", error);
-    }
+    } catch (error) { console.error("Görev kaydedilemedi:", error); }
   };
 
   const handleDeleteTask = async (id, wbs) => {
-    // Silerken, eğer bu görevin altında başka görevler varsa uyarı verelim
     const hasChildren = schedules.some(t => t.wbs.startsWith(wbs + '.') && t.id !== id);
-    if(hasChildren) {
-      alert("Bu görevin altında alt iş kalemleri var! Önce alt görevleri silmelisiniz.");
-      return;
-    }
+    if(hasChildren) return alert("Bu görevin altında alt iş kalemleri var! Önce alt görevleri silmelisiniz.");
 
     if(window.confirm("Bu iş kalemini kalıcı olarak silmek istediğinize emin misiniz?")) {
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', id));
-      } catch (error) { console.error("Silme hatası:", error); }
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', id)); } 
+      catch (error) { console.error("Silme hatası:", error); }
     }
   };
 
@@ -241,8 +290,8 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
   // --- DIŞA AKTARMA VE İLERLEME HESAPLARI ---
   const handleExportScheduleCSV = () => {
     if (schedules.length === 0) return alert(t?.noDataExport || "Veri yok");
-    const headers = [`WBS,Görev Adı,Süre(Gün),Başlangıç,Bitiş,İlerleme(%)`];
-    const csvData = schedules.map(task => `${task.wbs},"${task.name}",${calculateDays(task.start, task.finish)},${task.start},${task.finish},${task.progress}`);
+    const headers = [`WBS,Görev Adı,Süre(Gün),Başlangıç,Bitiş,İlerleme(%),Öncüller`];
+    const csvData = schedules.map(task => `${task.wbs},"${task.name}",${calculateDays(task.start, task.finish)},${task.start},${task.finish},${task.progress},"${task.predecessors || ''}"`);
     const csvBlob = new Blob([headers.concat(csvData).join("\n")], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(csvBlob));
@@ -268,7 +317,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
       {/* ÜST BUTONLAR */}
       <div className="px-5 pt-6 pb-4">
         <div className="flex gap-2">
-          {/* YENİ ANA GÖREV (ROOT) BUTONU */}
           <button onClick={openAddRootTask} className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
             <ListPlus className="w-4 h-4" /> Ana İş Ekle
           </button>
@@ -331,8 +379,8 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                     <th className="p-3">{t?.startCol || 'Başlangıç'}</th>
                     <th className="p-3">{t?.finishCol || 'Bitiş'}</th>
                     <th className="p-3 min-w-[100px] text-center">{t?.progressCol || 'İlerleme'}</th>
-                    {/* YENİ: İŞLEMLER SÜTUNU (Genişletildi) */}
-                    <th className="p-3 text-center min-w-[140px]">Hızlı İşlemler</th>
+                    <th className="p-3 text-center">Öncüller</th>
+                    <th className="p-3 text-center min-w-[180px]">Hızlı İşlemler</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -350,6 +398,14 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                     const rowClass = isRoot ? 'bg-blue-50/30' : 'hover:bg-gray-50';
                     const textClass = isRoot ? 'font-extrabold text-gray-900' : task.level === 1 ? 'font-bold text-gray-800' : 'font-medium text-gray-600';
 
+                    // Yukarı / Aşağı butonlarının durumunu belirle
+                    const siblings = schedules.filter(s => {
+                      const sParent = s.wbs.includes('.') ? s.wbs.substring(0, s.wbs.lastIndexOf('.')) : '';
+                      return sParent === parentWbs;
+                    });
+                    const isFirstSibling = siblings[0]?.id === task.id;
+                    const isLastSibling = siblings[siblings.length - 1]?.id === task.id;
+
                     return (
                       <tr key={task.id} className={`transition-colors ${rowClass}`}>
                         
@@ -358,11 +414,8 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                         </td>
                         
                         <td className="p-3 text-[10px] font-bold text-blue-600">{task.wbs}</td>
-                        
                         <td className={`p-3 truncate max-w-[250px] ${textClass}`} style={{ paddingLeft: `${Math.max(12, task.level * 16)}px` }}>{task.name}</td>
-                        
                         <td className="p-3 text-center font-bold text-gray-600">{calculateDays(task.start, task.finish)}</td>
-                        
                         <td className="p-3 text-gray-500 font-medium">{task.start || '-'}</td>
                         <td className="p-3 text-gray-500 font-medium">{task.finish || '-'}</td>
                         
@@ -375,24 +428,30 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                           </div>
                         </td>
 
-                        {/* MS PROJECT BENZERİ SAĞ TIK/HIZLI İŞLEM BUTONLARI */}
+                        {/* ÖNCÜLLER (BAĞLANTILAR) */}
+                        <td className="p-3 text-center text-[10px] font-bold text-blue-500">
+                          {task.predecessors ? (
+                            <div className="flex items-center justify-center gap-1"><LinkIcon className="w-3 h-3 text-gray-400"/> {task.predecessors}</div>
+                          ) : '-'}
+                        </td>
+
+                        {/* HIZLI İŞLEMLER VE YUKARI AŞAĞI TAŞIMA */}
                         <td className="p-3 text-center flex items-center justify-center gap-1.5 border-l border-gray-100 bg-white/50">
-                           {/* Alt Görev Ekle */}
-                           <button onClick={() => openAddChildTask(task)} title="Alt İş Kalemi Ekle" className="p-1.5 text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 rounded-md border border-blue-200 transition-colors shadow-sm">
-                             <CornerDownRight className="w-3.5 h-3.5" />
-                           </button>
-                           {/* Aynı Seviyeye Görev Ekle */}
-                           <button onClick={() => openAddSiblingTask(task)} title="Aynı Seviyeye İş Ekle" className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 bg-emerald-50 rounded-md border border-emerald-200 transition-colors shadow-sm">
-                             <Plus className="w-3.5 h-3.5" />
-                           </button>
                            
-                           {/* Düzenle ve Sil */}
-                           <button onClick={() => openEditTaskModal(task)} title="Düzenle" className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 bg-gray-100 rounded-md transition-colors shadow-sm ml-2">
-                             <Edit3 className="w-3.5 h-3.5" />
-                           </button>
-                           <button onClick={() => handleDeleteTask(task.id, task.wbs)} title="Sil" className="p-1.5 text-red-500 hover:text-white hover:bg-red-600 bg-red-50 rounded-md transition-colors shadow-sm">
-                             <Trash2 className="w-3.5 h-3.5" />
-                           </button>
+                           {/* Taşıma Butonları (Sadece Sıralama) */}
+                           <div className="flex flex-col mr-2 gap-0.5 border-r border-gray-200 pr-2">
+                             <button onClick={() => handleMoveTask(task, 'up')} disabled={isFirstSibling} className={`p-1 rounded-md transition-colors ${isFirstSibling ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-200'}`}>
+                               <ArrowUp className="w-3.5 h-3.5" />
+                             </button>
+                             <button onClick={() => handleMoveTask(task, 'down')} disabled={isLastSibling} className={`p-1 rounded-md transition-colors ${isLastSibling ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-200'}`}>
+                               <ArrowDown className="w-3.5 h-3.5" />
+                             </button>
+                           </div>
+
+                           <button onClick={() => openAddChildTask(task)} title="Alt İş Kalemi Ekle" className="p-1.5 text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 rounded-md border border-blue-200 transition-colors shadow-sm"><CornerDownRight className="w-3.5 h-3.5" /></button>
+                           <button onClick={() => openAddSiblingTask(task)} title="Aynı Seviyeye İş Ekle" className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 bg-emerald-50 rounded-md border border-emerald-200 transition-colors shadow-sm"><Plus className="w-3.5 h-3.5" /></button>
+                           <button onClick={() => openEditTaskModal(task)} title="Düzenle" className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 bg-gray-100 rounded-md transition-colors shadow-sm ml-1"><Edit3 className="w-3.5 h-3.5" /></button>
+                           <button onClick={() => handleDeleteTask(task.id, task.wbs)} title="Sil" className="p-1.5 text-red-500 hover:text-white hover:bg-red-600 bg-red-50 rounded-md transition-colors shadow-sm"><Trash2 className="w-3.5 h-3.5" /></button>
                         </td>
 
                       </tr>
@@ -415,16 +474,15 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                 <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">{modalConfig.title}</h3>
                 {modalConfig.mode === 'add' && (
                   <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mt-1 bg-blue-50 inline-block px-2 py-1 rounded-md">
-                    Otomatik WBS Kodu: {taskForm.wbs}
+                    Otomatik WBS: {taskForm.wbs}
                   </p>
                 )}
               </div>
               <button onClick={() => setIsTaskModalOpen(false)} className="bg-gray-100 p-2 rounded-xl active:bg-gray-200 text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             
-            <form onSubmit={handleSaveTask} className="space-y-5">
+            <form onSubmit={handleSaveTask} className="space-y-4">
               
-              {/* Eğer düzenleme modundaysa WBS kodunu gösterebilir, eklemede yukarıda rozet olarak gösterilir */}
               {modalConfig.mode === 'edit' && (
                 <div>
                    <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">WBS Kodu (Dikkatli Düzenleyin)</label>
@@ -433,7 +491,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
               )}
 
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Görev / İş Kalemi Adı</label>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Görev Adı</label>
                 <input required type="text" value={taskForm.name} onChange={e => setTaskForm({...taskForm, name: e.target.value})} placeholder="İş kalemini yazın" className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
               </div>
 
@@ -446,6 +504,12 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Bitiş</label>
                   <input type="date" value={taskForm.finish} onChange={e => setTaskForm({...taskForm, finish: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
                 </div>
+              </div>
+
+              {/* YENİ: ÖNCÜLLER (BAĞLANTILAR) */}
+              <div>
+                <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1 flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Öncül Görevler (Bağlantılar)</label>
+                <input type="text" value={taskForm.predecessors} onChange={e => setTaskForm({...taskForm, predecessors: e.target.value})} placeholder="Örn: 1.2 veya 1.2, 1.4" className="w-full bg-blue-50/50 border border-blue-200 rounded-xl px-3 py-3 text-sm font-semibold text-blue-900 focus:outline-none focus:border-blue-500 shadow-sm placeholder-blue-300" />
               </div>
 
               <div>
