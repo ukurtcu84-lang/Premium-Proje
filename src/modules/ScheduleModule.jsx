@@ -3,7 +3,7 @@ import { collection, doc, onSnapshot, addDoc, deleteDoc, updateDoc } from 'fireb
 import { 
   Upload, Download, FileSpreadsheet, Activity, 
   ChevronDown, ChevronRight, AlertCircle, Plus, Trash2, X, Edit3,
-  CornerDownRight, GitMerge, ListPlus, ArrowUp, ArrowDown, Link as LinkIcon
+  CornerDownRight, ListPlus, ArrowUp, ArrowDown, Link as LinkIcon, CheckCircle2
 } from 'lucide-react';
 import { calculateDays } from '../helpers';
 
@@ -23,7 +23,11 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     wbs: '', name: '', start: getTodayStr(), finish: getTodayStr(), progress: 0, predecessors: ''
   });
 
-  // Veritabanı Dinleme (WBS'e göre akıllı sıralama: 1.2, 1.10'dan önce gelir)
+  // YENİ: Basılı Tutarak Taşıma (Long Press) State'leri
+  const [activeMoveTaskId, setActiveMoveTaskId] = useState(null);
+  const pressTimer = useRef(null);
+
+  // Veritabanı Dinleme (WBS'e göre akıllı sıralama)
   useEffect(() => {
     if (!user || !db || isOfflineMode || !activeProject) return;
     const schedulesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'schedules');
@@ -44,7 +48,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     return () => unsub();
   }, [user, isOfflineMode, activeProject]);
 
-  // Offline Okuma Desteği
   useEffect(() => {
     if (isOfflineMode) {
       try {
@@ -57,6 +60,18 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     }
   }, [isOfflineMode, activeProject]);
 
+  // --- BASILI TUTMA (LONG PRESS) OLAYLARI ---
+  const handlePressStart = (taskId) => {
+    pressTimer.current = setTimeout(() => {
+      // Titreşim (Mobil cihaz destekliyorsa)
+      if (navigator.vibrate) navigator.vibrate(50);
+      setActiveMoveTaskId(taskId);
+    }, 500); // 500 milisaniye basılı tutunca aktifleşir
+  };
+
+  const handlePressEnd = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+  };
 
   // --- AKILLI WBS HESAPLAMA MOTORU ---
   const generateNextWbs = (targetWbs, actionType) => {
@@ -91,7 +106,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
   // --- YUKARI / AŞAĞI TAŞIMA (WBS DEĞİŞTİRME) MOTORU ---
   const handleMoveTask = async (task, direction) => {
-    // Aynı seviyedeki kardeşleri (siblings) bul
     const parentWbs = task.wbs.includes('.') ? task.wbs.substring(0, task.wbs.lastIndexOf('.')) : '';
     const siblings = schedules.filter(s => {
       const sParent = s.wbs.includes('.') ? s.wbs.substring(0, s.wbs.lastIndexOf('.')) : '';
@@ -100,7 +114,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
     const currentIndex = siblings.findIndex(s => s.id === task.id);
     
-    // Zaten en üstte veya en alttaysa işlem yapma
     if (direction === 'up' && currentIndex === 0) return;
     if (direction === 'down' && currentIndex === siblings.length - 1) return;
 
@@ -110,7 +123,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     const prefixB = targetSibling.wbs;
     const tasksToUpdate = [];
 
-    // Seçilen görevin ve kardeşinin altındaki TÜM görevlerin WBS'lerini birbirleriyle değiştir
     schedules.forEach(s => {
       let newWbs = s.wbs;
       let changed = false;
@@ -123,12 +135,9 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
         changed = true;
       }
 
-      if (changed) {
-        tasksToUpdate.push({ id: s.id, wbs: newWbs });
-      }
+      if (changed) tasksToUpdate.push({ id: s.id, wbs: newWbs });
     });
 
-    // Veritabanını güncelle
     try {
       const promises = tasksToUpdate.map(update => 
         updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', update.id), { wbs: update.wbs })
@@ -139,8 +148,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     }
   };
 
-
-  // --- XML YÜKLEME (Öncüller / Predecessors Desteği Eklendi) ---
+  // --- XML YÜKLEME ---
   const handleScheduleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || !activeProject) return;
@@ -154,7 +162,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
         const taskNodes = xmlDoc.getElementsByTagName("Task");
         
-        // 1. Tur: UID'leri WBS'e eşlemek için sözlük oluştur
         const uidToWbsMap = {};
         for (let i = 0; i < taskNodes.length; i++) {
           const uid = taskNodes[i].getElementsByTagName("UID")[0]?.textContent;
@@ -163,8 +170,6 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
         }
 
         const parsedTasks = [];
-
-        // 2. Tur: Görevleri ve öncülleri oku
         for (let i = 0; i < taskNodes.length; i++) {
           const node = taskNodes[i];
           const getVal = (tag) => node.getElementsByTagName(tag)[0]?.textContent || '';
@@ -177,14 +182,11 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
           const wbs = getVal("WBS");
           const outlineLevel = parseInt(getVal("OutlineLevel")) || 1;
 
-          // Öncülleri (PredecessorLink) Oku
           const predNodes = node.getElementsByTagName("PredecessorLink");
           const predecessorsArray = [];
           for (let j = 0; j < predNodes.length; j++) {
             const pUid = predNodes[j].getElementsByTagName("PredecessorUID")[0]?.textContent;
-            if (pUid && uidToWbsMap[pUid]) {
-              predecessorsArray.push(uidToWbsMap[pUid]); // WBS olarak kaydet
-            }
+            if (pUid && uidToWbsMap[pUid]) predecessorsArray.push(uidToWbsMap[pUid]);
           }
 
           if (name && wbs) {
@@ -209,13 +211,12 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
           const toDelete = schedules;
           for (const item of toDelete) { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', item.id)); }
           for (const item of parsedTasks) { await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'schedules'), item); }
-        } else { alert(t?.invalidXml || "Geçersiz XML Formatı"); }
-      } catch (error) { console.error(error); alert(t?.readError || "Okuma Hatası");
+        } else { alert("Geçersiz XML Formatı"); }
+      } catch (error) { console.error(error); alert("Okuma Hatası");
       } finally { setIsScheduleLoading(false); e.target.value = null; }
     };
     reader.readAsText(file);
   };
-
 
   // --- GÖREV MODALI AÇILIŞLARI ---
   const openAddRootTask = () => {
@@ -286,10 +287,9 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
     }
   };
 
-
   // --- DIŞA AKTARMA VE İLERLEME HESAPLARI ---
   const handleExportScheduleCSV = () => {
-    if (schedules.length === 0) return alert(t?.noDataExport || "Veri yok");
+    if (schedules.length === 0) return alert("Veri yok");
     const headers = [`WBS,Görev Adı,Süre(Gün),Başlangıç,Bitiş,İlerleme(%),Öncüller`];
     const csvData = schedules.map(task => `${task.wbs},"${task.name}",${calculateDays(task.start, task.finish)},${task.start},${task.finish},${task.progress},"${task.predecessors || ''}"`);
     const csvBlob = new Blob([headers.concat(csvData).join("\n")], { type: 'text/csv;charset=utf-8;' });
@@ -336,7 +336,7 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
       <div className="px-5 mb-5">
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{t?.scheduleOverallProgress || 'Genel İlerleme'}</p>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Genel İlerleme</p>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-extrabold text-blue-700 tracking-tight">%{calculateScheduleOverallProgress()}</span>
             </div>
@@ -352,12 +352,8 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
 
       {/* TABLO BÖLÜMÜ */}
       <div className="px-4">
-        <div className="flex justify-between items-center mb-2 px-1">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">{t?.tableView || 'İş Programı Tablosu'}</h3>
-        </div>
-
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
-          {isScheduleLoading && <p className="text-center py-10 text-gray-500 font-bold animate-pulse">{t?.readingFile || 'Okunuyor...'}</p>}
+          {isScheduleLoading && <p className="text-center py-10 text-gray-500 font-bold animate-pulse">Okunuyor...</p>}
           
           {!isScheduleLoading && schedules.length === 0 && (
              <div className="text-center py-12 px-4">
@@ -369,18 +365,18 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
           
           {!isScheduleLoading && schedules.length > 0 && (
             <div className="overflow-x-auto pb-2">
-              <table className="w-full text-left text-xs whitespace-nowrap">
+              <table className="w-full text-left text-xs whitespace-nowrap" style={{ WebkitTouchCallout: 'none' }}>
                 <thead className="bg-gray-100/80 text-gray-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-200">
                   <tr>
-                    <th className="p-3 w-8 text-center sticky left-0 bg-gray-100/90 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)]"></th>
-                    <th className="p-3 min-w-[50px]">WBS</th>
-                    <th className="p-3 min-w-[200px]">{t?.taskNameCol || 'Görev'}</th>
-                    <th className="p-3 text-center">{t?.durationCol || 'Süre(Gün)'}</th>
-                    <th className="p-3">{t?.startCol || 'Başlangıç'}</th>
-                    <th className="p-3">{t?.finishCol || 'Bitiş'}</th>
-                    <th className="p-3 min-w-[100px] text-center">{t?.progressCol || 'İlerleme'}</th>
-                    <th className="p-3 text-center">Öncüller</th>
-                    <th className="p-3 text-center min-w-[180px]">Hızlı İşlemler</th>
+                    <th className="px-2 py-3 w-8 text-center sticky left-0 bg-gray-100/90 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)]"></th>
+                    <th className="px-2 py-3 min-w-[40px]">WBS</th>
+                    <th className="px-2 py-3 min-w-[200px]">Görev Adı</th>
+                    <th className="px-2 py-3 text-center">Süre</th>
+                    <th className="px-2 py-3">Başlangıç</th>
+                    <th className="px-2 py-3">Bitiş</th>
+                    <th className="px-2 py-3 min-w-[80px] text-center">%</th>
+                    <th className="px-2 py-3 text-center">Öncül</th>
+                    <th className="px-2 py-3 text-center min-w-[120px]">İşlem</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -395,10 +391,15 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                     if (parentTask && expandedScheduleNodes[parentTask.uid] === false) return null;
 
                     const isRoot = task.level === 0;
-                    const rowClass = isRoot ? 'bg-blue-50/30' : 'hover:bg-gray-50';
+                    const isMoving = activeMoveTaskId === task.id;
+                    
+                    // Basılı Tutunca Row Tasarımı Değişir
+                    let rowClass = isRoot ? 'bg-blue-50/30' : 'hover:bg-gray-50';
+                    if (isMoving) rowClass = 'bg-amber-100/70 scale-[0.99] shadow-inner';
+
                     const textClass = isRoot ? 'font-extrabold text-gray-900' : task.level === 1 ? 'font-bold text-gray-800' : 'font-medium text-gray-600';
 
-                    // Yukarı / Aşağı butonlarının durumunu belirle
+                    // Taşıma Sınırları
                     const siblings = schedules.filter(s => {
                       const sParent = s.wbs.includes('.') ? s.wbs.substring(0, s.wbs.lastIndexOf('.')) : '';
                       return sParent === parentWbs;
@@ -407,51 +408,49 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                     const isLastSibling = siblings[siblings.length - 1]?.id === task.id;
 
                     return (
-                      <tr key={task.id} className={`transition-colors ${rowClass}`}>
+                      <tr 
+                        key={task.id} 
+                        className={`transition-all duration-200 ${rowClass}`}
+                        onPointerDown={() => handlePressStart(task.id)}
+                        onPointerUp={handlePressEnd}
+                        onPointerLeave={handlePressEnd}
+                        onContextMenu={(e) => { if (window.innerWidth < 768) e.preventDefault(); }}
+                      >
                         
-                        <td className="p-2 text-center sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)] cursor-pointer bg-inherit" onClick={() => hasChildren && toggleScheduleNode(task.uid)}>
+                        <td className="px-2 py-2.5 text-center sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)] cursor-pointer bg-inherit" onClick={() => hasChildren && toggleScheduleNode(task.uid)}>
                           {hasChildren ? (isExpanded ? <ChevronDown className="w-4 h-4 mx-auto text-gray-500" /> : <ChevronRight className="w-4 h-4 mx-auto text-gray-500" />) : <span className="inline-block w-4"></span>}
                         </td>
                         
-                        <td className="p-3 text-[10px] font-bold text-blue-600">{task.wbs}</td>
-                        <td className={`p-3 truncate max-w-[250px] ${textClass}`} style={{ paddingLeft: `${Math.max(12, task.level * 16)}px` }}>{task.name}</td>
-                        <td className="p-3 text-center font-bold text-gray-600">{calculateDays(task.start, task.finish)}</td>
-                        <td className="p-3 text-gray-500 font-medium">{task.start || '-'}</td>
-                        <td className="p-3 text-gray-500 font-medium">{task.finish || '-'}</td>
+                        <td className={`px-2 py-2.5 text-[10px] font-bold ${isMoving ? 'text-amber-800' : 'text-blue-600'}`}>{task.wbs}</td>
+                        <td className={`px-2 py-2.5 truncate max-w-[250px] ${textClass} ${isMoving ? 'text-amber-900' : ''}`} style={{ paddingLeft: `${Math.max(8, task.level * 16)}px` }}>{task.name}</td>
+                        <td className="px-2 py-2.5 text-center font-bold text-gray-600">{calculateDays(task.start, task.finish)}</td>
+                        <td className="px-2 py-2.5 text-gray-500 font-medium">{task.start ? task.start.substring(5) : '-'}</td>
+                        <td className="px-2 py-2.5 text-gray-500 font-medium">{task.finish ? task.finish.substring(5) : '-'}</td>
                         
-                        <td className="p-3">
-                          <div className="flex items-center gap-2 w-full">
-                            <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${task.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${task.progress}%` }}></div>
-                            </div>
-                            <span className={`text-[10px] font-bold w-7 text-right ${task.progress === 100 ? 'text-emerald-600' : 'text-gray-700'}`}>%{task.progress}</span>
-                          </div>
+                        <td className="px-2 py-2.5">
+                          <span className={`text-[10px] font-bold w-full block text-center ${task.progress === 100 ? 'text-emerald-600 bg-emerald-50 rounded px-1' : 'text-gray-700'}`}>%{task.progress}</span>
                         </td>
 
-                        {/* ÖNCÜLLER (BAĞLANTILAR) */}
-                        <td className="p-3 text-center text-[10px] font-bold text-blue-500">
-                          {task.predecessors ? (
-                            <div className="flex items-center justify-center gap-1"><LinkIcon className="w-3 h-3 text-gray-400"/> {task.predecessors}</div>
-                          ) : '-'}
+                        <td className="px-2 py-2.5 text-center text-[10px] font-bold text-blue-500">
+                          {task.predecessors ? (<div className="flex items-center justify-center gap-0.5"><LinkIcon className="w-3 h-3 text-gray-400"/> {task.predecessors}</div>) : '-'}
                         </td>
 
-                        {/* HIZLI İŞLEMLER VE YUKARI AŞAĞI TAŞIMA */}
-                        <td className="p-3 text-center flex items-center justify-center gap-1.5 border-l border-gray-100 bg-white/50">
-                           
-                           {/* Taşıma Butonları (Sadece Sıralama) */}
-                           <div className="flex flex-col mr-2 gap-0.5 border-r border-gray-200 pr-2">
-                             <button onClick={() => handleMoveTask(task, 'up')} disabled={isFirstSibling} className={`p-1 rounded-md transition-colors ${isFirstSibling ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-200'}`}>
-                               <ArrowUp className="w-3.5 h-3.5" />
-                             </button>
-                             <button onClick={() => handleMoveTask(task, 'down')} disabled={isLastSibling} className={`p-1 rounded-md transition-colors ${isLastSibling ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-200'}`}>
-                               <ArrowDown className="w-3.5 h-3.5" />
-                             </button>
-                           </div>
-
-                           <button onClick={() => openAddChildTask(task)} title="Alt İş Kalemi Ekle" className="p-1.5 text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 rounded-md border border-blue-200 transition-colors shadow-sm"><CornerDownRight className="w-3.5 h-3.5" /></button>
-                           <button onClick={() => openAddSiblingTask(task)} title="Aynı Seviyeye İş Ekle" className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 bg-emerald-50 rounded-md border border-emerald-200 transition-colors shadow-sm"><Plus className="w-3.5 h-3.5" /></button>
-                           <button onClick={() => openEditTaskModal(task)} title="Düzenle" className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 bg-gray-100 rounded-md transition-colors shadow-sm ml-1"><Edit3 className="w-3.5 h-3.5" /></button>
-                           <button onClick={() => handleDeleteTask(task.id, task.wbs)} title="Sil" className="p-1.5 text-red-500 hover:text-white hover:bg-red-600 bg-red-50 rounded-md transition-colors shadow-sm"><Trash2 className="w-3.5 h-3.5" /></button>
+                        {/* HIZLI İŞLEMLER (STANDART) VE TAŞIMA (BASILI TUTUNCA) */}
+                        <td className="px-2 py-1.5 text-center border-l border-gray-100 bg-white/50">
+                           {isMoving ? (
+                             <div className="flex items-center justify-center gap-2 animate-in zoom-in duration-200">
+                                <button onClick={() => handleMoveTask(task, 'up')} disabled={isFirstSibling} className={`p-2 rounded-lg shadow-md active:scale-95 ${isFirstSibling ? 'bg-gray-300 text-gray-100' : 'bg-gray-800 text-white'}`}><ArrowUp className="w-4 h-4"/></button>
+                                <button onClick={() => handleMoveTask(task, 'down')} disabled={isLastSibling} className={`p-2 rounded-lg shadow-md active:scale-95 ${isLastSibling ? 'bg-gray-300 text-gray-100' : 'bg-gray-800 text-white'}`}><ArrowDown className="w-4 h-4"/></button>
+                                <button onClick={() => setActiveMoveTaskId(null)} className="p-2 bg-emerald-500 text-white rounded-lg shadow-md active:scale-95"><CheckCircle2 className="w-4 h-4"/></button>
+                             </div>
+                           ) : (
+                             <div className="flex items-center justify-center gap-1.5">
+                               <button onClick={() => openAddChildTask(task)} className="p-1.5 text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 rounded-md transition-colors"><CornerDownRight className="w-3.5 h-3.5" /></button>
+                               <button onClick={() => openAddSiblingTask(task)} className="p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 bg-emerald-50 rounded-md transition-colors"><Plus className="w-3.5 h-3.5" /></button>
+                               <button onClick={() => openEditTaskModal(task)} className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-700 bg-gray-100 rounded-md transition-colors ml-1"><Edit3 className="w-3.5 h-3.5" /></button>
+                               <button onClick={() => handleDeleteTask(task.id, task.wbs)} className="p-1.5 text-red-500 hover:text-white hover:bg-red-600 bg-red-50 rounded-md transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                             </div>
+                           )}
                         </td>
 
                       </tr>
@@ -462,39 +461,32 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
             </div>
           )}
         </div>
-        {!isScheduleLoading && schedules.length > 0 && <p className="text-[10px] text-center text-gray-400 mt-3 flex items-center justify-center gap-1"><AlertCircle className="w-3 h-3"/> Tüm sütunları görmek için tabloyu kaydırın.</p>}
+        {!isScheduleLoading && schedules.length > 0 && <p className="text-[10px] text-center text-gray-400 mt-3 px-4"><AlertCircle className="w-3 h-3 inline mr-1"/> Taşıma Modu için satırın üzerine basılı tutun.</p>}
       </div>
 
-      {/* AKILLI GÖREV EKLEME/DÜZENLEME MODALI */}
+      {/* GÖREV EKLEME/DÜZENLEME MODALI */}
       {isTaskModalOpen && (
         <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex flex-col justify-end p-4">
           <div className="bg-white rounded-3xl p-6 mb-safe shadow-2xl animate-in slide-in-from-bottom-4">
             <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
               <div>
                 <h3 className="text-lg font-extrabold text-gray-900 tracking-tight">{modalConfig.title}</h3>
-                {modalConfig.mode === 'add' && (
-                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mt-1 bg-blue-50 inline-block px-2 py-1 rounded-md">
-                    Otomatik WBS: {taskForm.wbs}
-                  </p>
-                )}
+                {modalConfig.mode === 'add' && <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mt-1 bg-blue-50 inline-block px-2 py-1 rounded-md">WBS: {taskForm.wbs}</p>}
               </div>
               <button onClick={() => setIsTaskModalOpen(false)} className="bg-gray-100 p-2 rounded-xl active:bg-gray-200 text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             
             <form onSubmit={handleSaveTask} className="space-y-4">
-              
               {modalConfig.mode === 'edit' && (
                 <div>
-                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">WBS Kodu (Dikkatli Düzenleyin)</label>
+                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">WBS Kodu</label>
                    <input required type="text" value={taskForm.wbs} onChange={e => setTaskForm({...taskForm, wbs: e.target.value})} className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-600 focus:outline-none" />
                 </div>
               )}
-
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Görev Adı</label>
                 <input required type="text" value={taskForm.name} onChange={e => setTaskForm({...taskForm, name: e.target.value})} placeholder="İş kalemini yazın" className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Başlangıç</label>
@@ -505,29 +497,21 @@ export default function ScheduleModule({ activeProject, appId, user, db, isOffli
                   <input type="date" value={taskForm.finish} onChange={e => setTaskForm({...taskForm, finish: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
                 </div>
               </div>
-
-              {/* YENİ: ÖNCÜLLER (BAĞLANTILAR) */}
               <div>
-                <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1 flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Öncül Görevler (Bağlantılar)</label>
-                <input type="text" value={taskForm.predecessors} onChange={e => setTaskForm({...taskForm, predecessors: e.target.value})} placeholder="Örn: 1.2 veya 1.2, 1.4" className="w-full bg-blue-50/50 border border-blue-200 rounded-xl px-3 py-3 text-sm font-semibold text-blue-900 focus:outline-none focus:border-blue-500 shadow-sm placeholder-blue-300" />
+                <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1 flex items-center gap-1"><LinkIcon className="w-3 h-3"/> Öncül (Bağlantı)</label>
+                <input type="text" value={taskForm.predecessors} onChange={e => setTaskForm({...taskForm, predecessors: e.target.value})} placeholder="Örn: 1.2 veya 1.2, 1.4" className="w-full bg-blue-50/50 border border-blue-200 rounded-xl px-3 py-3 text-sm font-semibold text-blue-900 focus:outline-none focus:border-blue-500 shadow-sm" />
               </div>
-
               <div>
                  <div className="flex justify-between items-center mb-1">
-                   <label className="block text-[10px] font-bold text-gray-500 uppercase">İlerleme Yüzdesi</label>
-                   <span className="text-sm font-extrabold text-blue-700">%{taskForm.progress}</span>
+                   <label className="block text-[10px] font-bold text-gray-500 uppercase">İlerleme: %{taskForm.progress}</label>
                  </div>
-                 <input type="range" min="0" max="100" value={taskForm.progress} onChange={e => setTaskForm({...taskForm, progress: e.target.value})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mt-2" />
+                 <input type="range" min="0" max="100" value={taskForm.progress} onChange={e => setTaskForm({...taskForm, progress: e.target.value})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mt-1" />
               </div>
-
-              <button type="submit" className="w-full bg-blue-600 text-white py-4 mt-2 rounded-xl font-bold shadow-md hover:bg-blue-500 active:scale-95 transition-transform text-sm tracking-wide">
-                Kaydet
-              </button>
+              <button type="submit" className="w-full bg-blue-600 text-white py-4 mt-2 rounded-xl font-bold shadow-md hover:bg-blue-500 active:scale-95 transition-transform text-sm tracking-wide">Kaydet</button>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
