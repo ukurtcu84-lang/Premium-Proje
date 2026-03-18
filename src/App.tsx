@@ -1,386 +1,34 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './index.css';
 
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+// DIŞARIDAN ÇAĞIRILAN MODÜLLER VE YARDIMCILAR
+import { app, auth, db, appId } from './firebase';
+import { i18n } from './i18n';
+import { 
+  getTodayStr, getCurrentTimeStr, formatCurrency, getCurrencySymbol, 
+  calculateProgress, getFinancialVariance, calculateStatus, formatDisplayDate, 
+  getRemainingDays, loadLocal 
+} from './helpers';
+import { CircularProgress } from './CircularProgress';
+import ScheduleModule from './modules/ScheduleModule';
 
+// FIREBASE FONKSİYONLARI
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+
+// İKONLAR
 import { 
   Home, CheckSquare, FileText, Plus, Camera, Mic, 
   CheckCircle2, Circle, X, Trash2, Image as ImageIcon, Edit3,
-  Calendar, Clock, AlertTriangle, ArrowRightCircle, 
-  ChevronLeft, Building2, MapPin, Wallet, CalendarDays,
+  Clock, AlertTriangle, ArrowRightCircle, 
+  ChevronLeft, Building2, MapPin, Wallet,
   Briefcase, FolderKanban, MoreVertical, FilePlus2, Upload,
-  Calculator, HardHat, TrendingUp, TrendingDown, Target,
-  Lock, Mail, User, LogOut, Smartphone, CloudOff, Globe, Banknote,
-  TableProperties, Download, FileSpreadsheet, Activity, ChevronDown, ChevronRight, AlertCircle
+  Calculator, HardHat, Target, Lock, Mail, User, LogOut, 
+  Smartphone, CloudOff, Globe, Banknote, TableProperties
 } from 'lucide-react';
 
-// --- FIREBASE BAŞLATMA ---
-const firebaseConfig = {
-  apiKey: "AIzaSyCeGblmCa3eZtviSBh7BC0liomA2GGdBqs", 
-  authDomain: "premiumproje.firebaseapp.com",
-  projectId: "premiumproje",
-  storageBucket: "premiumproje.firebasestorage.app",
-  messagingSenderId: "60352240448",
-  appId: "1:60352240448:web:a50e1696e5a7c22ccef8a5",
-  measurementId: "G-SDYSXSS2R3"
-};
-
-let app, auth, db;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (e) {
-  console.error("Firebase başlatma hatası:", e);
-}
-
-const appId = "premiumproje";
-
-// --- ÇOKLU DİL (i18n) SÖZLÜĞÜ ---
-const i18n = {
-  tr: {
-    appTitle: "PMPP",
-    loginTitle1: "PMPP",
-    loginTitle2: "Yönetim Paneli",
-    cloudSync: "PMPP",
-    fullNameLabel: "Ad Soyad",
-    fullNamePlaceholder: "Adınız Soyadınız",
-    emailLabel: "E-Posta Adresi",
-    emailPlaceholder: "ornek@sirket.com",
-    passwordLabel: "Şifre",
-    passwordPlaceholder: "••••••••",
-    loginBtn: "Sisteme Giriş Yap",
-    signupBtn: "Kayıt Ol ve Başla",
-    offlineBtn: "Giriş Yapmadan Devam Et",
-    noAccount: "Hesabınız yok mu? Kayıt Olun",
-    hasAccount: "Zaten hesabınız var mı? Giriş Yapın",
-    authErrorConnect: "Sistem bağlantısı kurulamadı, sayfayı yenileyin.",
-    authErrorInvalid: "E-posta adresi veya şifre hatalı.",
-    authErrorInUse: "Bu e-posta adresi zaten kullanımda.",
-    authErrorWeak: "Şifre çok zayıf. En az 6 karakter olmalı.",
-    authErrorEmail: "Geçersiz e-posta adresi formatı.",
-    authErrorDisabled: "E-posta/Şifre ile giriş kapalı.",
-    portfolio: "Proje Portföyü",
-    newBtn: "Yeni",
-    noProject: "Henüz Proje Yok",
-    noProjectDesc: "Sağ üstten ilk projenizi oluşturun.",
-    budget: "Bütçe",
-    timeStatus: "Süre Durumu",
-    workload: "İş Yükü",
-    tasksLabel: "İş",
-    summary: "Özet",
-    tasksTab: "Görevler",
-    scheduleTab: "Program",
-    notesTab: "Notlar",
-    financialProgress: "Mali İlerleme",
-    target: "Hedef",
-    plannedBudget: "Planlanan Ödenek",
-    actualPayment: "Gerçekleşen Hakediş",
-    updatePayment: "Hakediş / Ödenek Güncelle",
-    overdueAlert: "Geciken",
-    overdueSuffix: "İşiniz Var!",
-    priorityTasks: "Öncelikli Bekleyen İşler",
-    seeAll: "TÜMÜNÜ GÖR",
-    noPendingTasks: "Harika, bekleyen işiniz yok 🎉",
-    pending: "Bekleyenler",
-    completed: "Tamamlananlar",
-    taskPlaceholder: "Yeni iş tanımı girin...",
-    listening: "Dinleniyor...",
-    cancel: "İptal",
-    save: "Kaydet",
-    selectedTasks: "İş Seçildi",
-    archiveConfirm: "Arşive kaldırmak için onaylayın",
-    confirm: "Onayla",
-    projectNotes: "Proje Notları",
-    noNotes: "Henüz not alınmadı.",
-    addRecord: "Kayıt Ekle",
-    camera: "Kamera",
-    gallery: "Galeri",
-    textVoiceNote: "Yazılı & Sesli Not",
-    notePlaceholder: "Toplantı, saha durumu, revizyon talebi...",
-    saveNote: "Notu Kaydet",
-    newProject: "Yeni Proje Kartı",
-    editProject: "Proje Kartını Düzenle",
-    basicInfo: "Temel Bilgiler",
-    projectName: "Proje Adı *",
-    client: "İdare / Müşteri",
-    location: "Proje Yeri",
-    durationCost: "Süre & Maliyet",
-    contractDate: "Sözleşme Tarihi",
-    durationDays: "Süresi (Gün)",
-    totalBudget: "İşin Bedeli (Bütçe)",
-    advancePayment: "Avans Tutarı",
-    advance: "Avans",
-    timeExt: "Süre Uzatımı",
-    costInc: "İş Artış Tutarı",
-    createProject: "Projeyi Oluştur",
-    saveChanges: "Değişiklikleri Kaydet",
-    deleteProjectConfirm: "Bu projeyi ve içindeki tüm verileri kalıcı olarak silmek istediğinize emin misiniz?",
-    deleteProjectBtn: "Projeyi Kalıcı Olarak Sil",
-    deleteNoteConfirm: "Bu notu kalıcı olarak silmek istediğinize emin misiniz?",
-    notStarted: "Başlamadı",
-    timeExceeded: "Süre Aşıldı",
-    daysLeft: "Kaldı",
-    ahead: "İleride",
-    behind: "Geride",
-    onTrack: "Planlamaya Uygun",
-    noData: "Veri Yok",
-    financialInput: "Finansal Veri Girişi",
-    updateCalculate: "Güncelle ve Hesapla",
-    unspecified: "Belirtilmedi",
-    late: "Gecikti:",
-    importXml: "İçe Aktar (XML)",
-    exportCsv: "Dışa Aktar",
-    scheduleOverallProgress: "Genel İlerleme",
-    tableView: "Tablo Görünümü",
-    loadDummy: "Örnek Veri Yükle",
-    readingFile: "Dosya Okunuyor...",
-    noSchedule: "Henüz program yüklenmedi.",
-    noScheduleDesc: "MS Project'ten XML formatında dışa aktarıp yükleyebilirsiniz.",
-    taskNameCol: "Görev Adı",
-    durationCol: "Süre (Gün)",
-    startCol: "Başlangıç",
-    finishCol: "Bitiş",
-    progressCol: "İlerleme",
-    scrollHint: "Tüm sütunları görmek için tabloyu sağa sola kaydırın.",
-    invalidXml: "Geçerli bir MS Project XML formatı bulunamadı.",
-    readError: "Dosya okuma hatası! Lütfen geçerli bir XML yükleyin.",
-    noDataExport: "Dışa aktarılacak veri yok!"
-  },
-  en: {
-    appTitle: "PMPP",
-    loginTitle1: "PMPP",
-    loginTitle2: "Management Panel",
-    cloudSync: "PMPP",
-    fullNameLabel: "Full Name",
-    fullNamePlaceholder: "John Doe",
-    emailLabel: "Email Address",
-    emailPlaceholder: "example@company.com",
-    passwordLabel: "Password",
-    passwordPlaceholder: "••••••••",
-    loginBtn: "Login",
-    signupBtn: "Sign Up & Start",
-    offlineBtn: "Continue Without Login",
-    noAccount: "Don't have an account? Sign Up",
-    hasAccount: "Already have an account? Login",
-    authErrorConnect: "Connection failed, please refresh.",
-    authErrorInvalid: "Invalid email or password.",
-    authErrorInUse: "Email already in use.",
-    authErrorWeak: "Password too weak. Min 6 characters.",
-    authErrorEmail: "Invalid email format.",
-    authErrorDisabled: "Email/Password login is disabled.",
-    portfolio: "Project Portfolio",
-    newBtn: "New",
-    noProject: "No Projects Yet",
-    noProjectDesc: "Create your first project from the top right.",
-    budget: "Budget",
-    timeStatus: "Time Status",
-    workload: "Workload",
-    tasksLabel: "Task(s)",
-    summary: "Summary",
-    tasksTab: "Tasks",
-    scheduleTab: "Schedule",
-    notesTab: "Notes",
-    financialProgress: "Financial Progress",
-    target: "Target",
-    plannedBudget: "Planned Budget",
-    actualPayment: "Actual Payment",
-    updatePayment: "Update Payment / Budget",
-    overdueAlert: "You have",
-    overdueSuffix: "overdue task(s)!",
-    priorityTasks: "Priority Pending Tasks",
-    seeAll: "SEE ALL",
-    noPendingTasks: "Great, no pending tasks 🎉",
-    pending: "Pending",
-    completed: "Completed",
-    taskPlaceholder: "Enter new task...",
-    listening: "Listening...",
-    cancel: "Cancel",
-    save: "Save",
-    selectedTasks: "Tasks Selected",
-    archiveConfirm: "Confirm to archive",
-    confirm: "Confirm",
-    projectNotes: "Project Notes",
-    noNotes: "No notes yet.",
-    addRecord: "Add Record",
-    camera: "Camera",
-    gallery: "Gallery",
-    textVoiceNote: "Text & Voice Note",
-    notePlaceholder: "Meeting, site status, revision request...",
-    saveNote: "Save Note",
-    newProject: "New Project Card",
-    editProject: "Edit Project Card",
-    basicInfo: "Basic Info",
-    projectName: "Project Name *",
-    client: "Client",
-    location: "Location",
-    durationCost: "Duration & Cost",
-    contractDate: "Contract Date",
-    durationDays: "Duration (Days)",
-    totalBudget: "Total Budget",
-    advancePayment: "Advance Payment",
-    advance: "Advance",
-    timeExt: "Time Extension",
-    costInc: "Cost Increase",
-    createProject: "Create Project",
-    saveChanges: "Save Changes",
-    deleteProjectConfirm: "Are you sure you want to permanently delete this project and all its data?",
-    deleteProjectBtn: "Delete Project Permanently",
-    deleteNoteConfirm: "Are you sure you want to permanently delete this note?",
-    notStarted: "Not Started",
-    timeExceeded: "Time Exceeded",
-    daysLeft: "Left",
-    ahead: "Ahead",
-    behind: "Behind",
-    onTrack: "On Track",
-    noData: "No Data",
-    financialInput: "Financial Data Entry",
-    updateCalculate: "Update and Calculate",
-    unspecified: "Unspecified",
-    late: "Late:",
-    importXml: "Import (XML)",
-    exportCsv: "Export",
-    scheduleOverallProgress: "Overall Progress",
-    tableView: "Table View",
-    loadDummy: "Load Dummy Data",
-    readingFile: "Reading File...",
-    noSchedule: "No schedule loaded yet.",
-    noScheduleDesc: "You can export as XML from MS Project and upload it.",
-    taskNameCol: "Task Name",
-    durationCol: "Duration (Days)",
-    startCol: "Start",
-    finishCol: "Finish",
-    progressCol: "Progress",
-    scrollHint: "Scroll the table left/right to view all columns.",
-    invalidXml: "No valid MS Project XML format found.",
-    readError: "File reading error! Please upload a valid XML.",
-    noDataExport: "No data to export!"
-  }
-};
-
-// Dairesel İlerleme Grafiği Bileşeni
-const CircularProgress = ({ progress, size = 64, strokeWidth = 6, colorClass = "text-blue-600" }) => {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (progress / 100) * circumference;
-
-  return (
-    <div className="relative flex items-center justify-center drop-shadow-sm" style={{ width: size, height: size }}>
-      <svg className="transform -rotate-90" width={size} height={size}>
-        <circle cx={size/2} cy={size/2} r={radius} stroke="currentColor" strokeWidth={strokeWidth} fill="transparent" className="text-gray-100" />
-        <circle 
-          cx={size/2} cy={size/2} r={radius} 
-          stroke="currentColor" strokeWidth={strokeWidth} fill="transparent" 
-          strokeDasharray={circumference} strokeDashoffset={offset} 
-          strokeLinecap="round"
-          className={`${colorClass} transition-all duration-1000 ease-out`} 
-        />
-      </svg>
-      <span className="absolute text-[13px] font-extrabold text-gray-900 tracking-tighter">
-        %{progress}
-      </span>
-    </div>
-  );
-};
-
 export default function App() {
-  // --- YARDIMCI FONKSİYONLAR ---
-  const getTodayStr = () => new Date().toISOString().split('T')[0];
-  const getCurrentTimeStr = () => new Date().toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'});
-
-  const formatCurrency = (amount, currencyCode = 'TRY') => {
-    if (amount === null || amount === undefined || amount === '') return '-';
-    try {
-      return new Intl.NumberFormat('tr-TR', { 
-        style: 'currency', currency: currencyCode, minimumFractionDigits: 0, maximumFractionDigits: 0
-      }).format(amount);
-    } catch (error) {
-      return `${amount} ${currencyCode}`;
-    }
-  };
-
-  const getCurrencySymbol = (currencyCode) => {
-    switch(currencyCode) {
-      case 'USD': return '$';
-      case 'EUR': return '€';
-      default: return '₺';
-    }
-  };
-
-  const calculateProgress = (payment, budget) => {
-    if (!budget || budget <= 0) return 0;
-    const ratio = (payment || 0) / budget;
-    return Math.min(100, Math.max(0, Math.round(ratio * 100)));
-  };
-
-  const getFinancialVariance = (actualPayment, targetPayment, budget, t) => {
-    if (!budget || budget <= 0) return { diff: 0, text: t.noData, color: 'text-gray-500', bg: 'bg-gray-100', icon: Circle };
-    
-    const actual = actualPayment || 0;
-    const target = targetPayment || 0;
-    
-    const actualPct = Math.round((actual / budget) * 100);
-    const targetPct = Math.round((target / budget) * 100);
-    const diff = actualPct - targetPct;
-
-    if (diff > 0) return { diff, text: `%${diff} ${t.ahead}`, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: TrendingUp };
-    if (diff < 0) return { diff, text: `%${Math.abs(diff)} ${t.behind}`, color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: TrendingDown };
-    return { diff: 0, text: t.onTrack, color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200', icon: CheckCircle2 };
-  };
-
-  const calculateStatus = (deadlineDate, deadlineTime, completed) => {
-    if (completed) return 'completed';
-    if (!deadlineDate) return 'normal';
-    const now = new Date();
-    const deadline = new Date(`${deadlineDate}T${deadlineTime || '23:59'}`);
-    const hoursLeft = (deadline.getTime() - now.getTime()) / (1000 * 3600);
-    if (hoursLeft < 0) return 'overdue';
-    if (hoursLeft <= 24) return 'upcoming';
-    return 'normal';
-  };
-
-  const formatDisplayDate = (dateStr) => {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' });
-  };
-
-  const getRemainingDays = (startDateStr, durationDays, t) => {
-    if (!startDateStr || !durationDays) return { remaining: 0, total: 0, text: t.unspecified, isOverdue: false };
-    
-    const start = new Date(startDateStr);
-    const today = new Date();
-    start.setHours(0,0,0,0); today.setHours(0,0,0,0);
-
-    const elapsedDays = Math.floor((today - start) / (1000 * 60 * 60 * 24));
-    const totalDuration = parseInt(durationDays);
-    const remainingDays = totalDuration - elapsedDays;
-
-    if (elapsedDays < 0) return { remaining: totalDuration, total: totalDuration, text: t.notStarted, isOverdue: false };
-    if (remainingDays < 0) return { remaining: 0, total: totalDuration, text: `${t.timeExceeded} (+${Math.abs(remainingDays)} / ${totalDuration})`, isOverdue: true };
-
-    return { remaining: remainingDays, total: totalDuration, text: `${remainingDays} / ${totalDuration} ${t.daysLeft}`, isOverdue: false };
-  };
-
-  // GÜN HESAPLAMA YARDIMCISI (İş Programı İçin)
-  const calculateDays = (start, finish) => {
-    if (!start || !finish) return '-';
-    const s = new Date(start);
-    const f = new Date(finish);
-    const diffTime = Math.abs(f - s);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-    return diffDays;
-  };
-
-  // LocalStorage Helper
-  const loadLocal = (key) => {
-    try { const data = localStorage.getItem(key); return data ? JSON.parse(data) : null; } 
-    catch(e) { return null; }
-  };
-
-  // --- STATE ---
+  // --- STATE YÖNETİMİ ---
   const [lang, setLang] = useState(() => loadLocal('premium_lang') || 'tr');
   const t = i18n[lang];
 
@@ -391,16 +39,13 @@ export default function App() {
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Form states for login/signup
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
 
-  // Veritabanı State'leri
   const [projects, setProjects] = useState(() => loadLocal('premium_projects') || []);
   const [tasks, setTasks] = useState(() => loadLocal('premium_tasks') || []);
   const [notes, setNotes] = useState(() => loadLocal('premium_notes') || []);
-  const [schedules, setSchedules] = useState(() => loadLocal('premium_schedules') || []); // YENİ: İş Programları DB
   
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [activeTab, setActiveTab] = useState('home'); // 'home', 'tasks', 'schedule', 'notes'
@@ -422,11 +67,6 @@ export default function App() {
   const [paymentInput, setPaymentInput] = useState('');
   const [targetPaymentInput, setTargetPaymentInput] = useState('');
 
-  // İş Programı Modülü (Schedule) State'leri
-  const [isScheduleLoading, setIsScheduleLoading] = useState(false);
-  const [expandedScheduleNodes, setExpandedScheduleNodes] = useState({});
-  const fileInputRef = useRef(null);
-
   const [projectForm, setProjectForm] = useState({
     name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: '', advancePayment: ''
   });
@@ -438,15 +78,9 @@ export default function App() {
   const activeProject = projects.find(p => p.id === activeProjectId);
   const activeTasks = tasks.filter(task => task.projectId === activeProjectId);
   const activeNotes = notes.filter(n => n.projectId === activeProjectId).sort((a,b) => b.createdAt - a.createdAt);
-  
-  // Projeye ait iş programı (Gantt) verisi
-  const activeScheduleTasks = schedules.filter(s => s.projectId === activeProjectId).sort((a, b) => a.order - b.order);
 
-  useEffect(() => {
-    setSelectedPendingTasks([]);
-  }, [activeTab, taskView, activeProjectId]);
+  useEffect(() => { setSelectedPendingTasks([]); }, [activeTab, taskView, activeProjectId]);
 
-  // Hata mesajını otomatik gizleme
   useEffect(() => {
     if(errorMessage) {
       const timer = setTimeout(() => setErrorMessage(''), 6000);
@@ -462,53 +96,29 @@ export default function App() {
 
   // --- FIREBASE BAĞLANTISI ---
   useEffect(() => {
-    if (!auth) {
-        setAuthError(t.authErrorConnect);
-        return;
-    }
+    if (!auth) { setAuthError(t.authErrorConnect); return; }
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        if (currentUser) {
-            setUser(currentUser);
-            setIsAuthenticated(true);
-        } else {
-            setUser(null);
-            if(!isOfflineMode) setIsAuthenticated(false);
-        }
+        if (currentUser) { setUser(currentUser); setIsAuthenticated(true); } 
+        else { setUser(null); if(!isOfflineMode) setIsAuthenticated(false); }
     });
     return () => unsubscribe();
   }, [isOfflineMode, t.authErrorConnect]);
 
   useEffect(() => {
     if (!user || !db || isOfflineMode) return;
-
-    const projectsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'projects');
-    const unsubProjects = onSnapshot(projectsRef, (snapshot) => {
-      const fetchedProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProjects(fetchedProjects.sort((a, b) => b.createdAt - a.createdAt));
+    const unsubProjects = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'projects'), (snapshot) => {
+      setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.createdAt - a.createdAt));
     }, (err) => console.error(err));
 
-    const tasksRef = collection(db, 'artifacts', appId, 'users', user.uid, 'tasks');
-    const unsubTasks = onSnapshot(tasksRef, (snapshot) => {
+    const unsubTasks = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'tasks'), (snapshot) => {
       setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (err) => console.error(err));
 
-    const notesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'notes');
-    const unsubNotes = onSnapshot(notesRef, (snapshot) => {
+    const unsubNotes = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'notes'), (snapshot) => {
       setNotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (err) => console.error(err));
 
-    // YENİ: İş Programı Tablosu İzleyici
-    const schedulesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'schedules');
-    const unsubSchedules = onSnapshot(schedulesRef, (snapshot) => {
-      setSchedules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error(err));
-
-    return () => {
-      unsubProjects();
-      unsubTasks();
-      unsubNotes();
-      unsubSchedules();
-    };
+    return () => { unsubProjects(); unsubTasks(); unsubNotes(); };
   }, [user, isOfflineMode]);
 
   // --- SES TANIMA ---
@@ -519,14 +129,12 @@ export default function App() {
       recognition.lang = lang === 'tr' ? 'tr-TR' : 'en-US';
       recognition.continuous = false;
       recognition.interimResults = false;
-
       recognition.onresult = (e) => {
         const transcript = e.results[0][0].transcript;
         if (recognitionRef.current.target === 'task') setNewTaskText(prev => prev + (prev ? ' ' : '') + transcript);
         else if (recognitionRef.current.target === 'note') setNewNoteText(prev => prev + (prev ? ' ' : '') + transcript);
         setIsRecording(false); setRecordingTarget(null);
       };
-
       recognition.onerror = () => { setIsRecording(false); setRecordingTarget(null); };
       recognition.onend = () => { setIsRecording(false); setRecordingTarget(null); };
       recognitionRef.current = recognition;
@@ -544,178 +152,87 @@ export default function App() {
   };
 
   const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    setAuthError('');
-    setIsOfflineMode(false);
-
-    if (!auth) {
-        setAuthError(t.authErrorConnect);
-        return;
-    }
-
+    e.preventDefault(); setAuthError(''); setIsOfflineMode(false);
+    if (!auth) { setAuthError(t.authErrorConnect); return; }
     try {
-        if (isLoginMode) {
-            await signInWithEmailAndPassword(auth, email, password);
-        } else {
-            await createUserWithEmailAndPassword(auth, email, password);
-        }
+        if (isLoginMode) await signInWithEmailAndPassword(auth, email, password);
+        else await createUserWithEmailAndPassword(auth, email, password);
     } catch (error) {
         console.error("Kimlik doğrulama hatası:", error);
         switch (error.code) {
-            case 'auth/invalid-credential':
-            case 'auth/user-not-found':
-            case 'auth/wrong-password':
-                setAuthError(t.authErrorInvalid);
-                break;
-            case 'auth/email-already-in-use':
-                setAuthError(t.authErrorInUse);
-                break;
-            case 'auth/weak-password':
-                setAuthError(t.authErrorWeak);
-                break;
-            case 'auth/invalid-email':
-                setAuthError(t.authErrorEmail);
-                break;
-            case 'auth/operation-not-allowed':
-                setAuthError(t.authErrorDisabled);
-                break;
-            default:
-                setAuthError(error.message);
+            case 'auth/invalid-credential': case 'auth/user-not-found': case 'auth/wrong-password': setAuthError(t.authErrorInvalid); break;
+            case 'auth/email-already-in-use': setAuthError(t.authErrorInUse); break;
+            case 'auth/weak-password': setAuthError(t.authErrorWeak); break;
+            case 'auth/invalid-email': setAuthError(t.authErrorEmail); break;
+            case 'auth/operation-not-allowed': setAuthError(t.authErrorDisabled); break;
+            default: setAuthError(error.message);
         }
     }
   };
 
   const handleLogout = async () => {
     try {
-        if (auth) {
-            await signOut(auth);
-        }
-        setIsAuthenticated(false);
-        setActiveProjectId(null);
-        setIsOfflineMode(false);
-        
-        setProjects(loadLocal('premium_projects') || []);
-        setTasks(loadLocal('premium_tasks') || []);
-        setNotes(loadLocal('premium_notes') || []);
-        setSchedules(loadLocal('premium_schedules') || []);
-    } catch (error) {
-        console.error("Çıkış yapılırken hata:", error);
-    }
+        if (auth) await signOut(auth);
+        setIsAuthenticated(false); setActiveProjectId(null); setIsOfflineMode(false);
+        setProjects(loadLocal('premium_projects') || []); setTasks(loadLocal('premium_tasks') || []); setNotes(loadLocal('premium_notes') || []);
+    } catch (error) { console.error("Çıkış yapılırken hata:", error); }
   };
 
-  const startOfflineMode = (e) => {
-    e.preventDefault();
-    setIsOfflineMode(true);
-    setIsAuthenticated(true);
-  };
+  const startOfflineMode = (e) => { e.preventDefault(); setIsOfflineMode(true); setIsAuthenticated(true); };
 
-  // --- CRUD İŞLEMLERİ (Bulut + LocalStorage Desteği) ---
-  
+  // --- CRUD İŞLEMLERİ ---
   const closeProjectForm = () => {
-    setIsProjectFormOpen(false);
-    setEditingProjectId(null);
+    setIsProjectFormOpen(false); setEditingProjectId(null);
     setProjectForm({name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: '', advancePayment: ''});
   };
 
   const openEditProject = () => {
     if (!activeProject) return;
     setProjectForm({
-      name: activeProject.name || '',
-      location: activeProject.location || '',
-      client: activeProject.client || '',
-      contractDate: activeProject.contractDate || getTodayStr(),
-      duration: activeProject.duration || '',
-      budget: activeProject.budget || '',
-      currency: activeProject.currency || 'TRY',
-      timeExtension: activeProject.timeExtension || '',
-      costIncrease: activeProject.costIncrease || '',
-      advancePayment: activeProject.advancePayment || ''
+      name: activeProject.name || '', location: activeProject.location || '', client: activeProject.client || '', contractDate: activeProject.contractDate || getTodayStr(),
+      duration: activeProject.duration || '', budget: activeProject.budget || '', currency: activeProject.currency || 'TRY', timeExtension: activeProject.timeExtension || '',
+      costIncrease: activeProject.costIncrease || '', advancePayment: activeProject.advancePayment || ''
     });
-    setEditingProjectId(activeProject.id);
-    setIsProjectInfoOpen(false);
-    setIsProjectFormOpen(true);
+    setEditingProjectId(activeProject.id); setIsProjectInfoOpen(false); setIsProjectFormOpen(true);
   };
 
   const handleSaveProject = async (e) => {
-    e.preventDefault();
-    if (!projectForm.name.trim()) return;
-    
-    const projectData = { 
-      ...projectForm, 
-      budget: Number(projectForm.budget) || 0,
-      advancePayment: Number(projectForm.advancePayment) || 0,
-    };
+    e.preventDefault(); if (!projectForm.name.trim()) return;
+    const projectData = { ...projectForm, budget: Number(projectForm.budget) || 0, advancePayment: Number(projectForm.advancePayment) || 0 };
 
     if (editingProjectId) {
       if (!user || !db || isOfflineMode) {
         const updated = projects.map(p => p.id === editingProjectId ? { ...p, ...projectData } : p);
-        setProjects(updated);
-        localStorage.setItem('premium_projects', JSON.stringify(updated));
-        closeProjectForm();
-        return;
+        setProjects(updated); localStorage.setItem('premium_projects', JSON.stringify(updated)); closeProjectForm(); return;
       }
-      try {
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'projects', editingProjectId), projectData);
-        closeProjectForm();
-      } catch (error) { 
-        console.error("Proje güncellenirken hata:", error); 
-        setErrorMessage("Güncelleme başarısız oldu.");
-      }
-
+      try { await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'projects', editingProjectId), projectData); closeProjectForm(); } 
+      catch (error) { console.error("Proje güncellenirken hata:", error); setErrorMessage("Güncelleme başarısız oldu."); }
     } else {
-      projectData.cumulativePayment = 0;
-      projectData.targetPayment = 0;
-      projectData.createdAt = Date.now();
-
+      projectData.cumulativePayment = 0; projectData.targetPayment = 0; projectData.createdAt = Date.now();
       if (!user || !db || isOfflineMode) {
          const fallbackProject = { id: Date.now().toString(), ...projectData };
          const updated = [fallbackProject, ...projects];
-         setProjects(updated);
-         localStorage.setItem('premium_projects', JSON.stringify(updated));
-         closeProjectForm();
-         enterProject(fallbackProject.id);
-         return;
+         setProjects(updated); localStorage.setItem('premium_projects', JSON.stringify(updated)); closeProjectForm(); enterProject(fallbackProject.id); return;
       }
       try {
         const docRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'projects'), projectData);
-        closeProjectForm();
-        enterProject(docRef.id);
-      } catch (error) { 
-        console.error("Proje oluşturulurken hata:", error); 
-      }
+        closeProjectForm(); enterProject(docRef.id);
+      } catch (error) { console.error("Proje oluşturulurken hata:", error); }
     }
   };
 
   const deleteProject = async (id) => {
     if(window.confirm(t.deleteProjectConfirm)) {
       if (!user || !db || isOfflineMode) {
-         const updated = projects.filter(p => p.id !== id);
-         setProjects(updated);
-         localStorage.setItem('premium_projects', JSON.stringify(updated));
-         
-         const updatedTasks = tasks.filter(task => task.projectId !== id);
-         setTasks(updatedTasks);
-         localStorage.setItem('premium_tasks', JSON.stringify(updatedTasks));
-         
-         const updatedNotes = notes.filter(n => n.projectId !== id);
-         setNotes(updatedNotes);
-         localStorage.setItem('premium_notes', JSON.stringify(updatedNotes));
-         
-         const updatedSchedules = schedules.filter(s => s.projectId !== id);
-         setSchedules(updatedSchedules);
-         localStorage.setItem('premium_schedules', JSON.stringify(updatedSchedules));
-
-         setActiveProjectId(null); 
-         return;
+         const updated = projects.filter(p => p.id !== id); setProjects(updated); localStorage.setItem('premium_projects', JSON.stringify(updated));
+         const updatedTasks = tasks.filter(task => task.projectId !== id); setTasks(updatedTasks); localStorage.setItem('premium_tasks', JSON.stringify(updatedTasks));
+         const updatedNotes = notes.filter(n => n.projectId !== id); setNotes(updatedNotes); localStorage.setItem('premium_notes', JSON.stringify(updatedNotes));
+         setActiveProjectId(null); return;
       }
       try {
         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'projects', id));
-        const tasksToDelete = tasks.filter(task => task.projectId === id);
-        tasksToDelete.forEach(task => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', task.id)));
-        const notesToDelete = notes.filter(n => n.projectId === id);
-        notesToDelete.forEach(n => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'notes', n.id)));
-        const schedulesToDelete = schedules.filter(s => s.projectId === id);
-        schedulesToDelete.forEach(s => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', s.id)));
+        const tasksToDelete = tasks.filter(task => task.projectId === id); tasksToDelete.forEach(task => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', task.id)));
+        const notesToDelete = notes.filter(n => n.projectId === id); notesToDelete.forEach(n => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'notes', n.id)));
         setActiveProjectId(null);
       } catch (error) { console.error(error); }
     }
@@ -725,15 +242,10 @@ export default function App() {
     if (!activeProjectId) return;
     if (!user || !db || isOfflineMode) {
       const updated = projects.map(p => p.id === activeProjectId ? { ...p, cumulativePayment: Number(paymentInput), targetPayment: Number(targetPaymentInput) } : p);
-      setProjects(updated);
-      localStorage.setItem('premium_projects', JSON.stringify(updated));
-      setIsPaymentModalOpen(false); setPaymentInput(''); setTargetPaymentInput(''); 
-      return;
+      setProjects(updated); localStorage.setItem('premium_projects', JSON.stringify(updated)); setIsPaymentModalOpen(false); setPaymentInput(''); setTargetPaymentInput(''); return;
     }
     try {
-      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'projects', activeProjectId), {
-        cumulativePayment: Number(paymentInput), targetPayment: Number(targetPaymentInput)
-      });
+      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'projects', activeProjectId), { cumulativePayment: Number(paymentInput), targetPayment: Number(targetPaymentInput) });
       setIsPaymentModalOpen(false); setPaymentInput(''); setTargetPaymentInput('');
     } catch(e) { console.error(e); }
   };
@@ -743,292 +255,60 @@ export default function App() {
 
   const handleAddTask = async () => {
     if (!newTaskText.trim() || !activeProjectId) return;
-    const newTask = { 
-      projectId: activeProjectId, text: newTaskText, completed: false, 
-      deadlineDate: newTaskDate, deadlineTime: newTaskTime, createdAt: Date.now()
-    };
+    const newTask = { projectId: activeProjectId, text: newTaskText, completed: false, deadlineDate: newTaskDate, deadlineTime: newTaskTime, createdAt: Date.now() };
     if (!user || !db || isOfflineMode) {
-       const fallbackTask = { id: Date.now().toString(), ...newTask };
-       const updated = [fallbackTask, ...tasks];
-       setTasks(updated);
-       localStorage.setItem('premium_tasks', JSON.stringify(updated));
-       setNewTaskText(''); setNewTaskTime(''); setNewTaskDate(getTodayStr()); 
-       return;
+       const fallbackTask = { id: Date.now().toString(), ...newTask }; const updated = [fallbackTask, ...tasks]; setTasks(updated); localStorage.setItem('premium_tasks', JSON.stringify(updated));
+       setNewTaskText(''); setNewTaskTime(''); setNewTaskDate(getTodayStr()); return;
     }
-    try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'tasks'), newTask);
-      setNewTaskText(''); setNewTaskTime(''); setNewTaskDate(getTodayStr());
-    } catch(e) { console.error(e); }
+    try { await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'tasks'), newTask); setNewTaskText(''); setNewTaskTime(''); setNewTaskDate(getTodayStr()); } catch(e) { console.error(e); }
   };
 
   const handleUpdateTask = async (id, newDate, newTime) => {
     if (!user || !db || isOfflineMode) {
-      const updated = tasks.map(task => task.id === id ? { ...task, deadlineDate: newDate, deadlineTime: newTime } : task);
-      setTasks(updated);
-      localStorage.setItem('premium_tasks', JSON.stringify(updated));
-      setEditingTask(null); 
-      return;
+      const updated = tasks.map(task => task.id === id ? { ...task, deadlineDate: newDate, deadlineTime: newTime } : task); setTasks(updated); localStorage.setItem('premium_tasks', JSON.stringify(updated)); setEditingTask(null); return;
     }
-    try {
-      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), { deadlineDate: newDate, deadlineTime: newTime });
-      setEditingTask(null);
-    } catch(e) { console.error(e); }
+    try { await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), { deadlineDate: newDate, deadlineTime: newTime }); setEditingTask(null); } catch(e) { console.error(e); }
   };
 
-  const toggleTaskSelection = (id) => {
-    if (selectedPendingTasks.includes(id)) {
-      setSelectedPendingTasks(selectedPendingTasks.filter(taskId => taskId !== id));
-    } else {
-      setSelectedPendingTasks([...selectedPendingTasks, id]);
-    }
-  };
+  const toggleTaskSelection = (id) => { setSelectedPendingTasks(selectedPendingTasks.includes(id) ? selectedPendingTasks.filter(taskId => taskId !== id) : [...selectedPendingTasks, id]); };
 
   const approveTaskSelection = async () => {
     if (!user || !db || isOfflineMode) {
-       const updated = tasks.map(task => selectedPendingTasks.includes(task.id) ? { ...task, completed: true } : task);
-       setTasks(updated);
-       localStorage.setItem('premium_tasks', JSON.stringify(updated));
-       setSelectedPendingTasks([]); 
-       return;
+       const updated = tasks.map(task => selectedPendingTasks.includes(task.id) ? { ...task, completed: true } : task); setTasks(updated); localStorage.setItem('premium_tasks', JSON.stringify(updated)); setSelectedPendingTasks([]); return;
     }
     try {
-      const updatePromises = selectedPendingTasks.map(taskId => {
-        return updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', taskId), { completed: true });
-      });
-      await Promise.all(updatePromises);
-      setSelectedPendingTasks([]);
+      const updatePromises = selectedPendingTasks.map(taskId => updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', taskId), { completed: true }));
+      await Promise.all(updatePromises); setSelectedPendingTasks([]);
     } catch(e) { console.error(e); }
   };
 
   const revertCompletedTask = async (id) => {
-    if (!user || !db || isOfflineMode) {
-       const updated = tasks.map(task => task.id === id ? { ...task, completed: false } : task);
-       setTasks(updated);
-       localStorage.setItem('premium_tasks', JSON.stringify(updated));
-       return;
-    }
-    try { await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), { completed: false }); } 
-    catch(e) { console.error(e); }
+    if (!user || !db || isOfflineMode) { const updated = tasks.map(task => task.id === id ? { ...task, completed: false } : task); setTasks(updated); localStorage.setItem('premium_tasks', JSON.stringify(updated)); return; }
+    try { await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id), { completed: false }); } catch(e) { console.error(e); }
   };
 
   const deleteTask = async (id) => {
-    if (!user || !db || isOfflineMode) { 
-      const updated = tasks.filter(task => task.id !== id);
-      setTasks(updated);
-      localStorage.setItem('premium_tasks', JSON.stringify(updated));
-      return; 
-    }
-    try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id)); } 
-    catch(e) { console.error(e); }
+    if (!user || !db || isOfflineMode) { const updated = tasks.filter(task => task.id !== id); setTasks(updated); localStorage.setItem('premium_tasks', JSON.stringify(updated)); return; }
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', id)); } catch(e) { console.error(e); }
   };
 
   const deleteNote = async (id) => {
     if(!window.confirm(t.deleteNoteConfirm)) return;
-    if (!user || !db || isOfflineMode) {
-      const updated = notes.filter(n => n.id !== id);
-      setNotes(updated);
-      localStorage.setItem('premium_notes', JSON.stringify(updated));
-      return;
-    }
-    try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'notes', id)); }
-    catch(e) { console.error(e); }
+    if (!user || !db || isOfflineMode) { const updated = notes.filter(n => n.id !== id); setNotes(updated); localStorage.setItem('premium_notes', JSON.stringify(updated)); return; }
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'notes', id)); } catch(e) { console.error(e); }
   };
 
   const addNote = async (type, content) => {
     if (!activeProjectId) return;
     const newNote = { projectId: activeProjectId, type, content, date: getCurrentTimeStr(), createdAt: Date.now() };
     if (!user || !db || isOfflineMode) { 
-      const fallbackNote = { id: Date.now().toString(), ...newNote };
-      const updated = [fallbackNote, ...notes];
-      setNotes(updated);
-      localStorage.setItem('premium_notes', JSON.stringify(updated));
-      return; 
+      const fallbackNote = { id: Date.now().toString(), ...newNote }; const updated = [fallbackNote, ...notes]; setNotes(updated); localStorage.setItem('premium_notes', JSON.stringify(updated)); return; 
     }
-    try { await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'notes'), newNote); } 
-    catch(e) { console.error(e); }
+    try { await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'notes'), newNote); } catch(e) { console.error(e); }
   };
 
-  const handleAddTextNote = () => {
-    if (!newNoteText.trim()) return;
-    addNote('text', newNoteText); setNewNoteText(''); setIsAddModalOpen(false);
-  };
-
-  const handlePhotoCapture = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => { addNote('image', reader.result); setIsAddModalOpen(false); };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  // --- İŞ PROGRAMI (SCHEDULE) FONKSİYONLARI ---
-  
-  const loadDummyScheduleData = async () => {
-    if (!activeProjectId) return;
-    const dummy = [
-      { projectId: activeProjectId, order: 0, uid: '1', wbs: '1', name: 'Villa İnşaatı Projesi', start: '2026-04-01', finish: '2026-10-30', progress: 45, level: 0 },
-      { projectId: activeProjectId, order: 1, uid: '2', wbs: '1.1', name: 'Hafriyat ve Temel İşleri', start: '2026-04-01', finish: '2026-04-15', progress: 100, level: 1 },
-      { projectId: activeProjectId, order: 2, uid: '3', wbs: '1.2', name: 'Kaba Yapı İşleri', start: '2026-04-16', finish: '2026-06-30', progress: 60, level: 1 },
-      { projectId: activeProjectId, order: 3, uid: '4', wbs: '1.2.1', name: 'Zemin Kat Kalıp/Demir/Beton', start: '2026-04-16', finish: '2026-05-10', progress: 100, level: 2 },
-      { projectId: activeProjectId, order: 4, uid: '5', wbs: '1.2.2', name: '1. Kat Kalıp/Demir/Beton', start: '2026-05-11', finish: '2026-05-30', progress: 50, level: 2 },
-      { projectId: activeProjectId, order: 5, uid: '6', wbs: '1.2.3', name: 'Çatı Katı İşleri', start: '2026-06-01', finish: '2026-06-30', progress: 0, level: 2 },
-      { projectId: activeProjectId, order: 6, uid: '7', wbs: '1.3', name: 'İnce Yapı İşleri', start: '2026-07-01', finish: '2026-09-30', progress: 0, level: 1 },
-      { projectId: activeProjectId, order: 7, uid: '8', wbs: '1.3.1', name: 'Alçı Sıva ve Boya', start: '2026-07-01', finish: '2026-08-15', progress: 0, level: 2 },
-      { projectId: activeProjectId, order: 8, uid: '9', wbs: '1.3.2', name: 'Seramik ve Fayans Kaplama', start: '2026-08-16', finish: '2026-09-30', progress: 0, level: 2 },
-    ];
-    
-    // Eski dataları sil ve yenilerini ekle
-    if (!user || !db || isOfflineMode) {
-      const filtered = schedules.filter(s => s.projectId !== activeProjectId);
-      const newSchedules = dummy.map(d => ({...d, id: Date.now().toString() + Math.random()}));
-      const updated = [...filtered, ...newSchedules];
-      setSchedules(updated);
-      localStorage.setItem('premium_schedules', JSON.stringify(updated));
-      
-      const initialExpanded = {};
-      newSchedules.forEach(s => initialExpanded[s.uid] = true);
-      setExpandedScheduleNodes(initialExpanded);
-      return;
-    }
-
-    try {
-      setIsScheduleLoading(true);
-      const toDelete = schedules.filter(s => s.projectId === activeProjectId);
-      for (const item of toDelete) {
-        await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', item.id));
-      }
-      
-      for (const item of dummy) {
-        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'schedules'), item);
-      }
-      setIsScheduleLoading(false);
-    } catch (e) { console.error(e); setIsScheduleLoading(false); }
-  };
-
-  const handleScheduleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file || !activeProjectId) return;
-
-    setIsScheduleLoading(true);
-    const reader = new FileReader();
-    
-    reader.onload = async (event) => {
-      try {
-        const xmlText = event.target.result;
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-        
-        const taskNodes = xmlDoc.getElementsByTagName("Task");
-        const parsedTasks = [];
-
-        let orderIndex = 0;
-        for (let i = 0; i < taskNodes.length; i++) {
-          const node = taskNodes[i];
-          
-          const getVal = (tag) => node.getElementsByTagName(tag)[0]?.textContent || '';
-          
-          const uid = getVal("UID");
-          const name = getVal("Name");
-          const startStr = getVal("Start").split('T')[0];
-          const finishStr = getVal("Finish").split('T')[0];
-          const progress = parseInt(getVal("PercentComplete")) || 0;
-          const wbs = getVal("WBS");
-          const outlineLevel = parseInt(getVal("OutlineLevel")) || 1;
-
-          if (name && uid && wbs) {
-            parsedTasks.push({
-              projectId: activeProjectId,
-              order: orderIndex++,
-              uid: uid,
-              wbs: wbs,
-              name: name,
-              start: startStr,
-              finish: finishStr,
-              progress: progress,
-              level: outlineLevel - 1 
-            });
-          }
-        }
-
-        if (parsedTasks.length > 0) {
-          // Eski dataları sil ve yenilerini ekle
-          if (!user || !db || isOfflineMode) {
-            const filtered = schedules.filter(s => s.projectId !== activeProjectId);
-            const newSchedules = parsedTasks.map(d => ({...d, id: Date.now().toString() + Math.random()}));
-            const updated = [...filtered, ...newSchedules];
-            setSchedules(updated);
-            localStorage.setItem('premium_schedules', JSON.stringify(updated));
-            
-            const initialExpanded = {};
-            newSchedules.forEach(s => initialExpanded[s.uid] = true);
-            setExpandedScheduleNodes(initialExpanded);
-            setIsScheduleLoading(false);
-            return;
-          }
-
-          const toDelete = schedules.filter(s => s.projectId === activeProjectId);
-          for (const item of toDelete) {
-            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', item.id));
-          }
-          
-          for (const item of parsedTasks) {
-            await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'schedules'), item);
-          }
-        } else {
-          alert(t.invalidXml);
-        }
-      } catch (error) {
-        console.error(error);
-        alert(t.readError);
-      } finally {
-        setIsScheduleLoading(false);
-        e.target.value = null; // inputu sıfırla
-      }
-    };
-
-    reader.readAsText(file);
-  };
-
-  const handleExportScheduleCSV = () => {
-    if (activeScheduleTasks.length === 0) return alert(t.noDataExport);
-    
-    const headers = [`WBS,${t.taskNameCol},${t.durationCol},${t.startCol},${t.finishCol},${t.progressCol}(%)`];
-    const csvData = activeScheduleTasks.map(task => `${task.wbs},"${task.name}",${calculateDays(task.start, task.finish)},${task.start},${task.finish},${task.progress}`);
-    const csvBlob = new Blob([headers.concat(csvData).join("\n")], { type: 'text/csv;charset=utf-8;' });
-    
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(csvBlob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `PMPP_Schedule_${activeProject?.name || 'Project'}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const toggleScheduleNode = (uid) => {
-    setExpandedScheduleNodes(prev => ({ ...prev, [uid]: !prev[uid] }));
-  };
-
-  const calculateScheduleOverallProgress = () => {
-    if (activeScheduleTasks.length === 0) return 0;
-    const rootTasks = activeScheduleTasks.filter(task => task.level === 0);
-    if(rootTasks.length > 0) {
-      const sum = rootTasks.reduce((acc, curr) => acc + curr.progress, 0);
-      return Math.round(sum / rootTasks.length);
-    }
-    return 0;
-  };
-
-  useEffect(() => {
-     // Sekme değiştiğinde tüm açık düğümleri kapatıp yeniden aç
-     if(activeTab === 'schedule' && activeScheduleTasks.length > 0) {
-        const initialExpanded = {};
-        activeScheduleTasks.forEach(task => initialExpanded[task.uid] = true);
-        setExpandedScheduleNodes(initialExpanded);
-     }
-  }, [activeTab, activeProjectId]); // Dependency dizisine dikkat
-
+  const handleAddTextNote = () => { if (!newNoteText.trim()) return; addNote('text', newNoteText); setNewNoteText(''); setIsAddModalOpen(false); };
+  const handlePhotoCapture = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { addNote('image', reader.result); setIsAddModalOpen(false); }; reader.readAsDataURL(file); } };
 
   // --- EKRAN BİLEŞENLERİ ---
   const renderPortfolio = () => (
@@ -1044,8 +324,7 @@ export default function App() {
         </div>
         <div className="flex gap-2">
           <button onClick={() => setIsProjectFormOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2.5 rounded-xl shadow-sm active:scale-95 transition-all flex items-center gap-1.5">
-            <Plus className="w-4 h-4" />
-            <span className="text-sm font-bold">{t.newBtn}</span>
+            <Plus className="w-4 h-4" /> <span className="text-sm font-bold">{t.newBtn}</span>
           </button>
           <button onClick={handleLogout} className="bg-gray-800 hover:bg-red-500 text-gray-300 hover:text-white px-3 py-2.5 rounded-xl shadow-sm active:scale-95 transition-colors border border-gray-700 hover:border-red-500">
             <LogOut className="w-4 h-4" />
@@ -1112,7 +391,6 @@ export default function App() {
     if (!activeProject) return null;
     const pendingTasks = activeTasks.filter(task => !task.completed);
     const overdueTasks = pendingTasks.filter(task => calculateStatus(task.deadlineDate, task.deadlineTime, false) === 'overdue');
-    
     const progressPercent = calculateProgress(activeProject.cumulativePayment, activeProject.budget);
     const targetPercent = calculateProgress(activeProject.targetPayment, activeProject.budget);
     const variance = getFinancialVariance(activeProject.cumulativePayment, activeProject.targetPayment, activeProject.budget, t);
@@ -1120,9 +398,7 @@ export default function App() {
     return (
       <div className="px-5 pb-28 pt-6 space-y-5 animate-in fade-in duration-300">
         <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-[0_4px_12px_rgba(0,0,0,0.03)] relative">
-          <button onClick={openEditProject} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-            <MoreVertical className="w-5 h-5" />
-          </button>
+          <button onClick={openEditProject} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"><MoreVertical className="w-5 h-5" /></button>
           
           <div className="relative">
             <div className="flex justify-between items-start mb-5 pr-8">
@@ -1140,9 +416,7 @@ export default function App() {
                 <div className={`absolute top-0 left-0 h-full rounded-full transition-all duration-500 z-10 ${variance.diff < 0 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${progressPercent}%` }}></div>
             </div>
 
-            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border mb-6 ${variance.bg} ${variance.color} ${variance.border}`}>
-              <variance.icon className="w-4 h-4" /> Durum: {variance.text}
-            </div>
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border mb-6 ${variance.bg} ${variance.color} ${variance.border}`}><variance.icon className="w-4 h-4" /> Durum: {variance.text}</div>
             
             <div className="grid grid-cols-2 gap-3 mb-5">
               <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
@@ -1170,24 +444,16 @@ export default function App() {
 
         {overdueTasks.length > 0 && (
           <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-center justify-between cursor-pointer shadow-sm" onClick={() => setActiveTab('tasks')}>
-            <div className="flex items-center gap-3">
-              <div className="bg-red-100 p-2 rounded-lg"><AlertTriangle className="w-5 h-5 text-red-600" /></div>
-              <div><h4 className="font-bold text-red-900 text-sm">{t.overdueAlert} {overdueTasks.length} {t.overdueSuffix}</h4></div>
-            </div>
-            <ArrowRightCircle className="w-5 h-5 text-red-500" />
+            <div className="flex items-center gap-3"><div className="bg-red-100 p-2 rounded-lg"><AlertTriangle className="w-5 h-5 text-red-600" /></div><div><h4 className="font-bold text-red-900 text-sm">{t.overdueAlert} {overdueTasks.length} {t.overdueSuffix}</h4></div></div><ArrowRightCircle className="w-5 h-5 text-red-500" />
           </div>
         )}
 
         <div>
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex justify-between items-center">
-            {t.priorityTasks}
-            <button onClick={() => setActiveTab('tasks')} className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2.5 py-1.5 rounded-md tracking-wider">{t.seeAll}</button>
-          </h3>
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex justify-between items-center">{t.priorityTasks}<button onClick={() => setActiveTab('tasks')} className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2.5 py-1.5 rounded-md tracking-wider">{t.seeAll}</button></h3>
           <div className="space-y-2.5">
             {pendingTasks.slice(0, 3).map(task => (
               <div key={task.id} onClick={() => setActiveTab('tasks')} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-start gap-3 cursor-pointer active:scale-95 transition-transform hover:border-blue-300 group">
-                <Circle className="w-5 h-5 text-gray-300 mt-0.5 flex-shrink-0 group-hover:text-blue-400 transition-colors" />
-                <p className="text-sm font-semibold text-gray-800 flex-1 leading-snug">{task.text}</p>
+                <Circle className="w-5 h-5 text-gray-300 mt-0.5 flex-shrink-0 group-hover:text-blue-400 transition-colors" /><p className="text-sm font-semibold text-gray-800 flex-1 leading-snug">{task.text}</p>
               </div>
             ))}
             {pendingTasks.length === 0 && <p className="text-sm text-gray-500 text-center py-5 bg-white rounded-xl border border-dashed border-gray-300 font-medium">{t.noPendingTasks}</p>}
@@ -1199,31 +465,20 @@ export default function App() {
 
   const renderProjectTasks = () => {
     const displayTasks = activeTasks.filter(task => taskView === 'pending' ? !task.completed : task.completed);
-    if(taskView === 'pending') {
-      displayTasks.sort((a, b) => {
-        const priority = { 'overdue': 1, 'upcoming': 2, 'normal': 3 };
-        return priority[calculateStatus(a.deadlineDate, a.deadlineTime, a.completed)] - priority[calculateStatus(b.deadlineDate, b.deadlineTime, b.completed)];
-      });
-    }
+    if(taskView === 'pending') { displayTasks.sort((a, b) => { const priority = { 'overdue': 1, 'upcoming': 2, 'normal': 3 }; return priority[calculateStatus(a.deadlineDate, a.deadlineTime, a.completed)] - priority[calculateStatus(b.deadlineDate, b.deadlineTime, b.completed)]; }); }
 
     return (
       <div className="px-5 pb-32 pt-6 space-y-5 animate-in fade-in duration-300 relative">
         <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-2">
-           <button onClick={() => setTaskView('pending')} className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all ${taskView==='pending' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
-             {t.pending} ({activeTasks.filter(task=>!task.completed).length})
-           </button>
-           <button onClick={() => setTaskView('completed')} className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all ${taskView==='completed' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
-             {t.completed} ({activeTasks.filter(task=>task.completed).length})
-           </button>
+           <button onClick={() => setTaskView('pending')} className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all ${taskView==='pending' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>{t.pending} ({activeTasks.filter(task=>!task.completed).length})</button>
+           <button onClick={() => setTaskView('completed')} className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all ${taskView==='completed' ? 'bg-white shadow-sm text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>{t.completed} ({activeTasks.filter(task=>task.completed).length})</button>
         </div>
 
         {taskView === 'pending' && (
           <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm space-y-3">
             <div className={`flex items-center bg-gray-50 border rounded-xl px-2 transition-colors ${isRecording && recordingTarget === 'task' ? 'border-red-300 bg-red-50/50' : 'border-gray-200'}`}>
               <input type="text" value={newTaskText} onChange={(e) => setNewTaskText(e.target.value)} placeholder={isRecording && recordingTarget === 'task' ? t.listening : t.taskPlaceholder} className="flex-1 bg-transparent px-2 py-3 text-sm font-semibold text-gray-900 focus:outline-none placeholder-gray-400" />
-              <button onClick={() => toggleRecording('task')} className={`p-1.5 rounded-lg transition-all ${isRecording && recordingTarget === 'task' ? 'text-red-500 bg-red-100 animate-pulse' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}>
-                <Mic className="w-5 h-5" />
-              </button>
+              <button onClick={() => toggleRecording('task')} className={`p-1.5 rounded-lg transition-all ${isRecording && recordingTarget === 'task' ? 'text-red-500 bg-red-100 animate-pulse' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}><Mic className="w-5 h-5" /></button>
             </div>
             <div className="flex gap-2">
               <input type="date" value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-600 focus:outline-none focus:border-blue-400" />
@@ -1256,9 +511,7 @@ export default function App() {
 
             return (
               <div key={task.id} onClick={() => !task.completed ? toggleTaskSelection(task.id) : revertCompletedTask(task.id)} className={`p-4 rounded-2xl border flex items-start gap-3 transition-all cursor-pointer ${task.completed ? 'bg-gray-50 border-gray-200 opacity-70' : isSelected ? 'bg-blue-50 border-blue-400 shadow-md' : status === 'overdue' ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200 shadow-sm hover:border-blue-200'}`}>
-                <div className="mt-0.5">
-                  {task.completed ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : isSelected ? <CheckCircle2 className="w-5 h-5 text-blue-600" /> : <Circle className={`w-5 h-5 ${status === 'overdue' ? 'text-red-500' : 'text-gray-300'}`} />}
-                </div>
+                <div className="mt-0.5">{task.completed ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : isSelected ? <CheckCircle2 className="w-5 h-5 text-blue-600" /> : <Circle className={`w-5 h-5 ${status === 'overdue' ? 'text-red-500' : 'text-gray-300'}`} />}</div>
                 <div className="flex-1">
                   <p className={`text-sm font-semibold leading-snug ${task.completed ? 'text-gray-500 line-through' : isSelected ? 'text-blue-900' : status === 'overdue' ? 'text-red-900' : 'text-gray-900'}`}>{task.text}</p>
                   {(task.deadlineDate || task.deadlineTime) && !task.completed && (
@@ -1282,167 +535,12 @@ export default function App() {
             <div className="bg-gray-900 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border border-gray-700">
               <div className="flex items-center gap-3">
                  <div className="bg-blue-500/20 p-2.5 rounded-xl text-blue-400"><CheckSquare className="w-5 h-5" /></div>
-                 <div>
-                    <p className="text-sm font-extrabold">{selectedPendingTasks.length} {t.selectedTasks}</p>
-                    <p className="text-[10px] text-gray-400 font-medium mt-0.5">{t.archiveConfirm}</p>
-                 </div>
+                 <div><p className="text-sm font-extrabold">{selectedPendingTasks.length} {t.selectedTasks}</p><p className="text-[10px] text-gray-400 font-medium mt-0.5">{t.archiveConfirm}</p></div>
               </div>
-              <button onClick={approveTaskSelection} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 active:scale-95 transition-transform shadow-md">
-                 {t.confirm} <ArrowRightCircle className="w-4 h-4" />
-              </button>
+              <button onClick={approveTaskSelection} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 active:scale-95 transition-transform shadow-md">{t.confirm} <ArrowRightCircle className="w-4 h-4" /></button>
             </div>
           </div>
         )}
-      </div>
-    );
-  };
-
-  // YENİ: İŞ PROGRAMI EKRANI
-  const renderProjectSchedule = () => {
-    return (
-      <div className="pb-28 animate-in fade-in duration-300">
-        
-        <div className="px-5 pt-6 pb-4">
-          <div className="flex gap-2">
-            <input type="file" accept=".xml" className="hidden" ref={fileInputRef} onChange={handleScheduleFileUpload} />
-            <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
-              <Upload className="w-4 h-4" /> {t.importXml}
-            </button>
-            <button onClick={handleExportScheduleCSV} className="flex-1 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
-              <Download className="w-4 h-4" /> {t.exportCsv}
-            </button>
-          </div>
-        </div>
-
-        <div className="px-5 mb-5">
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{t.scheduleOverallProgress}</p>
-              <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-extrabold text-blue-700 tracking-tight">%{calculateScheduleOverallProgress()}</span>
-              </div>
-            </div>
-            <div className="w-14 h-14 rounded-full border-4 border-gray-100 flex items-center justify-center relative">
-              <svg className="absolute inset-0 w-full h-full transform -rotate-90">
-                 <circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="4" className="text-blue-600" strokeDasharray="150" strokeDashoffset={150 - (150 * calculateScheduleOverallProgress()) / 100} strokeLinecap="round" />
-              </svg>
-              <Activity className="w-5 h-5 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="px-4">
-          <div className="flex justify-between items-center mb-2 px-1">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">{t.tableView}</h3>
-            {activeScheduleTasks.length === 0 && <span className="text-xs font-bold text-blue-600 cursor-pointer" onClick={loadDummyScheduleData}>{t.loadDummy}</span>}
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
-            
-            {isScheduleLoading && <p className="text-center py-10 text-gray-500 font-bold animate-pulse">{t.readingFile}</p>}
-            
-            {!isScheduleLoading && activeScheduleTasks.length === 0 && (
-               <div className="text-center py-12 px-4">
-                 <FileSpreadsheet className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                 <p className="text-sm font-bold text-gray-600">{t.noSchedule}</p>
-                 <p className="text-xs text-gray-400 mt-1">{t.noScheduleDesc}</p>
-               </div>
-            )}
-
-            {!isScheduleLoading && activeScheduleTasks.length > 0 && (
-              <div className="overflow-x-auto pb-2">
-                <table className="w-full text-left text-xs whitespace-nowrap">
-                  <thead className="bg-gray-100/80 text-gray-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-200">
-                    <tr>
-                      <th className="p-3 w-8 text-center sticky left-0 bg-gray-100/90 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)]"></th>
-                      <th className="p-3 min-w-[50px]">WBS</th>
-                      <th className="p-3 min-w-[200px]">{t.taskNameCol}</th>
-                      <th className="p-3 text-center">{t.durationCol}</th>
-                      <th className="p-3">{t.startCol}</th>
-                      <th className="p-3">{t.finishCol}</th>
-                      <th className="p-3 min-w-[100px] text-center">{t.progressCol}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {activeScheduleTasks.map((task) => {
-                      const hasChildren = activeScheduleTasks.some(t => t.wbs.startsWith(task.wbs + '.') && t.uid !== task.uid);
-                      const isExpanded = expandedScheduleNodes[task.uid];
-                      
-                      const parentWbsParts = task.wbs.split('.');
-                      parentWbsParts.pop();
-                      const parentWbs = parentWbsParts.join('.');
-                      const parentTask = activeScheduleTasks.find(t => t.wbs === parentWbs);
-                      if (parentTask && expandedScheduleNodes[parentTask.uid] === false) return null;
-
-                      const isRoot = task.level === 0;
-                      const rowClass = isRoot ? 'bg-blue-50/30' : 'hover:bg-gray-50';
-                      const textClass = isRoot ? 'font-extrabold text-gray-900' : task.level === 1 ? 'font-bold text-gray-800' : 'font-medium text-gray-600';
-
-                      return (
-                        <tr key={task.id} className={`transition-colors ${rowClass}`}>
-                          <td 
-                            className="p-2 text-center sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)] cursor-pointer bg-inherit"
-                            onClick={() => hasChildren && toggleScheduleNode(task.uid)}
-                          >
-                            {hasChildren ? (
-                              isExpanded ? <ChevronDown className="w-4 h-4 mx-auto text-gray-500" /> : <ChevronRight className="w-4 h-4 mx-auto text-gray-500" />
-                            ) : (
-                              <span className="inline-block w-4"></span>
-                            )}
-                          </td>
-
-                          <td className="p-3 text-[10px] font-bold text-blue-600">
-                            {task.wbs}
-                          </td>
-
-                          <td 
-                            className={`p-3 truncate max-w-[250px] ${textClass}`}
-                            style={{ paddingLeft: `${Math.max(12, task.level * 16)}px` }}
-                          >
-                            {task.name}
-                          </td>
-
-                          <td className="p-3 text-center font-bold text-gray-600">
-                            {calculateDays(task.start, task.finish)}
-                          </td>
-
-                          <td className="p-3 text-gray-500 font-medium">
-                            {task.start}
-                          </td>
-
-                          <td className="p-3 text-gray-500 font-medium">
-                            {task.finish}
-                          </td>
-
-                          <td className="p-3">
-                            <div className="flex items-center gap-2 w-full">
-                              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                <div 
-                                  className={`h-full rounded-full ${task.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
-                                  style={{ width: `${task.progress}%` }}
-                                ></div>
-                              </div>
-                              <span className={`text-[10px] font-bold w-7 text-right ${task.progress === 100 ? 'text-emerald-600' : 'text-gray-700'}`}>
-                                %{task.progress}
-                              </span>
-                            </div>
-                          </td>
-
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-          
-          {!isScheduleLoading && activeScheduleTasks.length > 0 && (
-            <p className="text-[10px] text-center text-gray-400 mt-3 flex items-center justify-center gap-1">
-              <AlertCircle className="w-3 h-3"/> {t.scrollHint}
-            </p>
-          )}
-        </div>
       </div>
     );
   };
@@ -1457,11 +555,8 @@ export default function App() {
             <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{note.date}</span>
               <div className="flex items-center gap-3">
-                {note.type === 'image' && <ImageIcon className="w-4 h-4 text-blue-500" />}
-                {note.type === 'text' && <FileText className="w-4 h-4 text-gray-400" />}
-                <button onClick={() => deleteNote(note.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {note.type === 'image' && <ImageIcon className="w-4 h-4 text-blue-500" />}{note.type === 'text' && <FileText className="w-4 h-4 text-gray-400" />}
+                <button onClick={() => deleteNote(note.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
             {note.type === 'text' && <p className="text-sm text-gray-800 leading-relaxed font-medium">{note.content}</p>}
@@ -1478,77 +573,44 @@ export default function App() {
       <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 font-sans antialiased relative overflow-hidden">
         <div className="absolute top-6 right-6 z-20">
           <button onClick={toggleLanguage} className="bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-extrabold text-white shadow-sm transition-colors flex items-center gap-1.5">
-            <Globe className="w-3.5 h-3.5" />
-            {lang === 'tr' ? 'EN' : 'TR'}
+            <Globe className="w-3.5 h-3.5" />{lang === 'tr' ? 'EN' : 'TR'}
           </button>
         </div>
-
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-600 rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-pulse"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-600 rounded-full mix-blend-screen filter blur-[100px] opacity-30"></div>
 
         <div className="w-full max-w-sm bg-white rounded-[2rem] shadow-2xl p-8 relative z-10 border border-gray-100">
           <div className="flex justify-center mb-6">
             <div className="bg-gray-900 p-4 rounded-2xl shadow-lg border border-gray-700 relative">
-              <Briefcase className="w-8 h-8 text-blue-500" />
-              <div className="absolute -bottom-2 -right-2 bg-blue-600 p-1.5 rounded-lg border-2 border-white">
-                <Smartphone className="w-3 h-3 text-white" />
-              </div>
+              <Briefcase className="w-8 h-8 text-blue-500" /><div className="absolute -bottom-2 -right-2 bg-blue-600 p-1.5 rounded-lg border-2 border-white"><Smartphone className="w-3 h-3 text-white" /></div>
             </div>
           </div>
           
           <h2 className="text-2xl font-extrabold text-center text-gray-900 mb-1 tracking-tight leading-tight">{t.loginTitle1} <br/>{t.loginTitle2}</h2>
-          <div className="flex justify-center mb-6">
-             <span className="bg-blue-100 text-blue-700 text-[10px] font-extrabold px-2.5 py-1 rounded-md tracking-widest uppercase">{t.cloudSync}</span>
-          </div>
+          <div className="flex justify-center mb-6"><span className="bg-blue-100 text-blue-700 text-[10px] font-extrabold px-2.5 py-1 rounded-md tracking-widest uppercase">{t.cloudSync}</span></div>
 
-          {authError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl text-[11px] font-semibold mb-4 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <p>{authError}</p>
-            </div>
-          )}
+          {authError && (<div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl text-[11px] font-semibold mb-4 flex items-start gap-2"><AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" /><p>{authError}</p></div>)}
 
           <form onSubmit={handleAuthSubmit} className="space-y-4">
             {!isLoginMode && (
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 ml-1">{t.fullNameLabel}</label>
-                <div className="relative">
-                  <User className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" />
-                  <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} required placeholder={t.fullNamePlaceholder} className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
-                </div>
+                <div className="relative"><User className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" /><input type="text" value={fullName} onChange={e => setFullName(e.target.value)} required placeholder={t.fullNamePlaceholder} className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" /></div>
               </div>
             )}
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 ml-1">{t.emailLabel}</label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder={t.emailPlaceholder} className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
-              </div>
+              <div className="relative"><Mail className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" /><input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder={t.emailPlaceholder} className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" /></div>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 ml-1">{t.passwordLabel}</label>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" />
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder={t.passwordPlaceholder} className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
-              </div>
+              <div className="relative"><Lock className="absolute left-3.5 top-3.5 w-5 h-5 text-gray-400" /><input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder={t.passwordPlaceholder} className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" /></div>
             </div>
-            
-            <button type="submit" className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-all tracking-wide mt-2">
-              {isLoginMode ? t.loginBtn : t.signupBtn}
-            </button>
-
-            <div className="pt-2">
-                <button type="button" onClick={startOfflineMode} className="w-full bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200 active:scale-95 transition-all text-xs flex items-center justify-center gap-2">
-                    <CloudOff className="w-4 h-4" /> {t.offlineBtn}
-                </button>
-            </div>
+            <button type="submit" className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-all tracking-wide mt-2">{isLoginMode ? t.loginBtn : t.signupBtn}</button>
+            <div className="pt-2"><button type="button" onClick={startOfflineMode} className="w-full bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200 active:scale-95 transition-all text-xs flex items-center justify-center gap-2"><CloudOff className="w-4 h-4" /> {t.offlineBtn}</button></div>
           </form>
 
-          <div className="mt-6 text-center">
-            <button onClick={() => setIsLoginMode(!isLoginMode)} className="text-[13px] font-bold text-gray-500 hover:text-blue-600 transition-colors">
-              {isLoginMode ? t.noAccount : t.hasAccount}
-            </button>
-          </div>
+          <div className="mt-6 text-center"><button onClick={() => setIsLoginMode(!isLoginMode)} className="text-[13px] font-bold text-gray-500 hover:text-blue-600 transition-colors">{isLoginMode ? t.noAccount : t.hasAccount}</button></div>
         </div>
       </div>
     );
@@ -1556,15 +618,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased selection:bg-blue-100 selection:text-blue-900 relative">
-      
-      {errorMessage && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-[90%] max-w-sm bg-red-500 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-start gap-3 animate-in slide-in-from-top-4">
-          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          <p className="text-xs font-bold leading-relaxed flex-1">{errorMessage}</p>
-          <button onClick={() => setErrorMessage('')} className="p-1 bg-red-600 rounded-lg hover:bg-red-700 active:scale-95"><X className="w-4 h-4"/></button>
-        </div>
-      )}
-
       <div className="w-full h-full max-w-md mx-auto bg-gray-50 relative shadow-2xl min-h-screen flex flex-col border-x border-gray-200 overflow-hidden">
         
         {/* HEADER (Proje İçi) */}
@@ -1586,12 +639,19 @@ export default function App() {
           <div className="flex-1 overflow-y-auto">
             {activeTab === 'home' && renderProjectDashboard()}
             {activeTab === 'tasks' && renderProjectTasks()}
-            {activeTab === 'schedule' && renderProjectSchedule()}
+            {/* YENİ MODÜL BURADA ÇAĞIRILIYOR */}
+            {activeTab === 'schedule' && (
+              <ScheduleModule 
+                activeProject={activeProject} 
+                appId={appId} user={user} db={db} 
+                isOfflineMode={isOfflineMode} t={t} 
+              />
+            )}
             {activeTab === 'notes' && renderProjectNotes()}
           </div>
         )}
 
-        {/* ALT MENÜ (YENİ DÜZEN) */}
+        {/* ALT MENÜ */}
         {activeProjectId && (
           <div className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 px-4 py-3 flex justify-between items-center pb-safe z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
             <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === 'home' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><Home className={`w-5 h-5 ${activeTab === 'home' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">{t.summary}</span></button>
@@ -1651,8 +711,8 @@ export default function App() {
                       <div>
                         <label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.totalBudget}</label>
                         <div className="flex gap-2">
-                          <select value={projectForm.currency} onChange={e => setProjectForm({...projectForm, currency: e.target.value})} className="w-24 bg-gray-50 border border-gray-300 rounded-xl px-2 py-3 text-base font-extrabold focus:outline-none focus:border-blue-500"><option value="TRY">₺</option><option value="USD">$</option><option value="EUR">€</option></select>
-                          <input required type="number" value={projectForm.budget} onChange={e => setProjectForm({...projectForm, budget: e.target.value})} placeholder="0.00" className="flex-1 w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-base font-bold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
+                          <select value={projectForm.currency} onChange={e => setProjectForm({...projectForm, currency: e.target.value})} className="w-24 bg-gray-50 border border-gray-300 rounded-xl px-2 py-3 text-base font-extrabold focus:outline-none focus:border-blue-500"><option value="TRY">₺ (TL)</option><option value="USD">$ (USD)</option><option value="EUR">€ (EUR)</option></select>
+                          <input required type="number" value={projectForm.budget} onChange={e => setProjectForm({...projectForm, budget: e.target.value})} placeholder="0.00" className="flex-1 w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-base font-bold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
                         </div>
                       </div>
                       <div>
@@ -1681,10 +741,8 @@ export default function App() {
         {isProjectInfoOpen && activeProject && (
           <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl relative">
-              
               <button onClick={openEditProject} className="absolute top-4 right-14 bg-blue-50 p-2 rounded-xl text-blue-600 z-10 hover:bg-blue-100 transition-colors shadow-sm"><Edit3 className="w-5 h-5" /></button>
               <button onClick={() => setIsProjectInfoOpen(false)} className="absolute top-4 right-4 bg-gray-100 p-2 rounded-xl text-gray-600 z-10 hover:bg-gray-200 transition-colors shadow-sm"><X className="w-5 h-5" /></button>
-              
               <div className="p-6">
                 <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mb-4 border border-gray-200"><HardHat className="w-7 h-7 text-gray-700" /></div>
                 <h3 className="text-2xl font-extrabold text-gray-900 mb-1 tracking-tight pr-20">{activeProject.name}</h3>
@@ -1692,20 +750,10 @@ export default function App() {
                 <div className="space-y-3">
                   <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.client}</p><p className="font-bold text-gray-800 text-sm">{activeProject.client || '-'}</p></div>
                   <div className="grid grid-cols-2 gap-3"><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.contractDate}</p><p className="font-bold text-gray-800 text-sm">{formatDisplayDate(activeProject.contractDate) || '-'}</p></div><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.durationDays}</p><p className="font-bold text-gray-800 text-sm">{activeProject.duration ? `${activeProject.duration}` : '-'}</p></div></div>
-                  
                   <div className="space-y-3">
-                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between">
-                      <p className="text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-1 flex-shrink-0">{t.totalBudget}</p>
-                      <p className="font-black text-blue-700 text-lg tracking-tight truncate pl-4">{formatCurrency(activeProject.budget, activeProject.currency)}</p>
-                    </div>
-                    {activeProject.advancePayment > 0 && (
-                      <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-between">
-                        <p className="text-[10px] text-emerald-600 uppercase font-bold tracking-widest mb-1 flex-shrink-0">{t.advance}</p>
-                        <p className="font-black text-emerald-700 text-lg tracking-tight truncate pl-4">{formatCurrency(activeProject.advancePayment, activeProject.currency)}</p>
-                      </div>
-                    )}
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between"><p className="text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-1 flex-shrink-0">{t.totalBudget}</p><p className="font-black text-blue-700 text-lg tracking-tight truncate pl-4">{formatCurrency(activeProject.budget, activeProject.currency)}</p></div>
+                    {activeProject.advancePayment > 0 && (<div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-between"><p className="text-[10px] text-emerald-600 uppercase font-bold tracking-widest mb-1 flex-shrink-0">{t.advance}</p><p className="font-black text-emerald-700 text-lg tracking-tight truncate pl-4">{formatCurrency(activeProject.advancePayment, activeProject.currency)}</p></div>)}
                   </div>
-
                   <div className="grid grid-cols-2 gap-3"><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.timeExt}</p><p className="font-bold text-gray-800 text-sm">{activeProject.timeExtension || '-'}</p></div><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.costInc}</p><p className="font-bold text-gray-800 text-sm">{activeProject.costIncrease || '-'}</p></div></div>
                 </div>
                 <div className="mt-8 pt-5 border-t border-gray-100"><button onClick={() => {setIsProjectInfoOpen(false); deleteProject(activeProject.id);}} className="w-full flex items-center justify-center gap-2 text-red-600 font-bold text-sm p-4 bg-red-50 hover:bg-red-100 rounded-2xl transition-colors"><Trash2 className="w-4 h-4" /> {t.deleteProjectBtn}</button></div>
