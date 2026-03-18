@@ -12,7 +12,8 @@ import {
   ChevronLeft, Building2, MapPin, Wallet, CalendarDays,
   Briefcase, FolderKanban, MoreVertical, FilePlus2, Upload,
   Calculator, HardHat, TrendingUp, TrendingDown, Target,
-  Lock, Mail, User, LogOut, Smartphone, CloudOff, Globe, Banknote
+  Lock, Mail, User, LogOut, Smartphone, CloudOff, Globe, Banknote,
+  TableProperties, Download, FileSpreadsheet, Activity, ChevronDown, ChevronRight, AlertCircle
 } from 'lucide-react';
 
 // --- FIREBASE BAŞLATMA ---
@@ -70,7 +71,8 @@ const i18n = {
     workload: "İş Yükü",
     tasksLabel: "İş",
     summary: "Özet",
-    tasksTab: "İşler",
+    tasksTab: "Görevler",
+    scheduleTab: "Program",
     notesTab: "Notlar",
     financialProgress: "Mali İlerleme",
     target: "Hedef",
@@ -128,7 +130,24 @@ const i18n = {
     financialInput: "Finansal Veri Girişi",
     updateCalculate: "Güncelle ve Hesapla",
     unspecified: "Belirtilmedi",
-    late: "Gecikti:"
+    late: "Gecikti:",
+    importXml: "İçe Aktar (XML)",
+    exportCsv: "Dışa Aktar",
+    scheduleOverallProgress: "Genel İlerleme",
+    tableView: "Tablo Görünümü",
+    loadDummy: "Örnek Veri Yükle",
+    readingFile: "Dosya Okunuyor...",
+    noSchedule: "Henüz program yüklenmedi.",
+    noScheduleDesc: "MS Project'ten XML formatında dışa aktarıp yükleyebilirsiniz.",
+    taskNameCol: "Görev Adı",
+    durationCol: "Süre (Gün)",
+    startCol: "Başlangıç",
+    finishCol: "Bitiş",
+    progressCol: "İlerleme",
+    scrollHint: "Tüm sütunları görmek için tabloyu sağa sola kaydırın.",
+    invalidXml: "Geçerli bir MS Project XML formatı bulunamadı.",
+    readError: "Dosya okuma hatası! Lütfen geçerli bir XML yükleyin.",
+    noDataExport: "Dışa aktarılacak veri yok!"
   },
   en: {
     appTitle: "PMPP",
@@ -162,6 +181,7 @@ const i18n = {
     tasksLabel: "Task(s)",
     summary: "Summary",
     tasksTab: "Tasks",
+    scheduleTab: "Schedule",
     notesTab: "Notes",
     financialProgress: "Financial Progress",
     target: "Target",
@@ -219,7 +239,24 @@ const i18n = {
     financialInput: "Financial Data Entry",
     updateCalculate: "Update and Calculate",
     unspecified: "Unspecified",
-    late: "Late:"
+    late: "Late:",
+    importXml: "Import (XML)",
+    exportCsv: "Export",
+    scheduleOverallProgress: "Overall Progress",
+    tableView: "Table View",
+    loadDummy: "Load Dummy Data",
+    readingFile: "Reading File...",
+    noSchedule: "No schedule loaded yet.",
+    noScheduleDesc: "You can export as XML from MS Project and upload it.",
+    taskNameCol: "Task Name",
+    durationCol: "Duration (Days)",
+    startCol: "Start",
+    finishCol: "Finish",
+    progressCol: "Progress",
+    scrollHint: "Scroll the table left/right to view all columns.",
+    invalidXml: "No valid MS Project XML format found.",
+    readError: "File reading error! Please upload a valid XML.",
+    noDataExport: "No data to export!"
   }
 };
 
@@ -327,6 +364,16 @@ export default function App() {
     return { remaining: remainingDays, total: totalDuration, text: `${remainingDays} / ${totalDuration} ${t.daysLeft}`, isOverdue: false };
   };
 
+  // GÜN HESAPLAMA YARDIMCISI (İş Programı İçin)
+  const calculateDays = (start, finish) => {
+    if (!start || !finish) return '-';
+    const s = new Date(start);
+    const f = new Date(finish);
+    const diffTime = Math.abs(f - s);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    return diffDays;
+  };
+
   // LocalStorage Helper
   const loadLocal = (key) => {
     try { const data = localStorage.getItem(key); return data ? JSON.parse(data) : null; } 
@@ -353,9 +400,10 @@ export default function App() {
   const [projects, setProjects] = useState(() => loadLocal('premium_projects') || []);
   const [tasks, setTasks] = useState(() => loadLocal('premium_tasks') || []);
   const [notes, setNotes] = useState(() => loadLocal('premium_notes') || []);
+  const [schedules, setSchedules] = useState(() => loadLocal('premium_schedules') || []); // YENİ: İş Programları DB
   
   const [activeProjectId, setActiveProjectId] = useState(null);
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState('home'); // 'home', 'tasks', 'schedule', 'notes'
   const [taskView, setTaskView] = useState('pending');
   const [selectedPendingTasks, setSelectedPendingTasks] = useState([]); 
   
@@ -374,6 +422,11 @@ export default function App() {
   const [paymentInput, setPaymentInput] = useState('');
   const [targetPaymentInput, setTargetPaymentInput] = useState('');
 
+  // İş Programı Modülü (Schedule) State'leri
+  const [isScheduleLoading, setIsScheduleLoading] = useState(false);
+  const [expandedScheduleNodes, setExpandedScheduleNodes] = useState({});
+  const fileInputRef = useRef(null);
+
   const [projectForm, setProjectForm] = useState({
     name: '', location: '', client: '', contractDate: getTodayStr(), duration: '', budget: '', currency: 'TRY', timeExtension: '', costIncrease: '', advancePayment: ''
   });
@@ -385,6 +438,9 @@ export default function App() {
   const activeProject = projects.find(p => p.id === activeProjectId);
   const activeTasks = tasks.filter(task => task.projectId === activeProjectId);
   const activeNotes = notes.filter(n => n.projectId === activeProjectId).sort((a,b) => b.createdAt - a.createdAt);
+  
+  // Projeye ait iş programı (Gantt) verisi
+  const activeScheduleTasks = schedules.filter(s => s.projectId === activeProjectId).sort((a, b) => a.order - b.order);
 
   useEffect(() => {
     setSelectedPendingTasks([]);
@@ -441,10 +497,17 @@ export default function App() {
       setNotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (err) => console.error(err));
 
+    // YENİ: İş Programı Tablosu İzleyici
+    const schedulesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'schedules');
+    const unsubSchedules = onSnapshot(schedulesRef, (snapshot) => {
+      setSchedules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => console.error(err));
+
     return () => {
       unsubProjects();
       unsubTasks();
       unsubNotes();
+      unsubSchedules();
     };
   }, [user, isOfflineMode]);
 
@@ -534,6 +597,7 @@ export default function App() {
         setProjects(loadLocal('premium_projects') || []);
         setTasks(loadLocal('premium_tasks') || []);
         setNotes(loadLocal('premium_notes') || []);
+        setSchedules(loadLocal('premium_schedules') || []);
     } catch (error) {
         console.error("Çıkış yapılırken hata:", error);
     }
@@ -637,6 +701,10 @@ export default function App() {
          setNotes(updatedNotes);
          localStorage.setItem('premium_notes', JSON.stringify(updatedNotes));
          
+         const updatedSchedules = schedules.filter(s => s.projectId !== id);
+         setSchedules(updatedSchedules);
+         localStorage.setItem('premium_schedules', JSON.stringify(updatedSchedules));
+
          setActiveProjectId(null); 
          return;
       }
@@ -646,6 +714,8 @@ export default function App() {
         tasksToDelete.forEach(task => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tasks', task.id)));
         const notesToDelete = notes.filter(n => n.projectId === id);
         notesToDelete.forEach(n => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'notes', n.id)));
+        const schedulesToDelete = schedules.filter(s => s.projectId === id);
+        schedulesToDelete.forEach(s => deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', s.id)));
         setActiveProjectId(null);
       } catch (error) { console.error(error); }
     }
@@ -792,6 +862,174 @@ export default function App() {
     }
   };
 
+  // --- İŞ PROGRAMI (SCHEDULE) FONKSİYONLARI ---
+  
+  const loadDummyScheduleData = async () => {
+    if (!activeProjectId) return;
+    const dummy = [
+      { projectId: activeProjectId, order: 0, uid: '1', wbs: '1', name: 'Villa İnşaatı Projesi', start: '2026-04-01', finish: '2026-10-30', progress: 45, level: 0 },
+      { projectId: activeProjectId, order: 1, uid: '2', wbs: '1.1', name: 'Hafriyat ve Temel İşleri', start: '2026-04-01', finish: '2026-04-15', progress: 100, level: 1 },
+      { projectId: activeProjectId, order: 2, uid: '3', wbs: '1.2', name: 'Kaba Yapı İşleri', start: '2026-04-16', finish: '2026-06-30', progress: 60, level: 1 },
+      { projectId: activeProjectId, order: 3, uid: '4', wbs: '1.2.1', name: 'Zemin Kat Kalıp/Demir/Beton', start: '2026-04-16', finish: '2026-05-10', progress: 100, level: 2 },
+      { projectId: activeProjectId, order: 4, uid: '5', wbs: '1.2.2', name: '1. Kat Kalıp/Demir/Beton', start: '2026-05-11', finish: '2026-05-30', progress: 50, level: 2 },
+      { projectId: activeProjectId, order: 5, uid: '6', wbs: '1.2.3', name: 'Çatı Katı İşleri', start: '2026-06-01', finish: '2026-06-30', progress: 0, level: 2 },
+      { projectId: activeProjectId, order: 6, uid: '7', wbs: '1.3', name: 'İnce Yapı İşleri', start: '2026-07-01', finish: '2026-09-30', progress: 0, level: 1 },
+      { projectId: activeProjectId, order: 7, uid: '8', wbs: '1.3.1', name: 'Alçı Sıva ve Boya', start: '2026-07-01', finish: '2026-08-15', progress: 0, level: 2 },
+      { projectId: activeProjectId, order: 8, uid: '9', wbs: '1.3.2', name: 'Seramik ve Fayans Kaplama', start: '2026-08-16', finish: '2026-09-30', progress: 0, level: 2 },
+    ];
+    
+    // Eski dataları sil ve yenilerini ekle
+    if (!user || !db || isOfflineMode) {
+      const filtered = schedules.filter(s => s.projectId !== activeProjectId);
+      const newSchedules = dummy.map(d => ({...d, id: Date.now().toString() + Math.random()}));
+      const updated = [...filtered, ...newSchedules];
+      setSchedules(updated);
+      localStorage.setItem('premium_schedules', JSON.stringify(updated));
+      
+      const initialExpanded = {};
+      newSchedules.forEach(s => initialExpanded[s.uid] = true);
+      setExpandedScheduleNodes(initialExpanded);
+      return;
+    }
+
+    try {
+      setIsScheduleLoading(true);
+      const toDelete = schedules.filter(s => s.projectId === activeProjectId);
+      for (const item of toDelete) {
+        await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', item.id));
+      }
+      
+      for (const item of dummy) {
+        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'schedules'), item);
+      }
+      setIsScheduleLoading(false);
+    } catch (e) { console.error(e); setIsScheduleLoading(false); }
+  };
+
+  const handleScheduleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !activeProjectId) return;
+
+    setIsScheduleLoading(true);
+    const reader = new FileReader();
+    
+    reader.onload = async (event) => {
+      try {
+        const xmlText = event.target.result;
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+        
+        const taskNodes = xmlDoc.getElementsByTagName("Task");
+        const parsedTasks = [];
+
+        let orderIndex = 0;
+        for (let i = 0; i < taskNodes.length; i++) {
+          const node = taskNodes[i];
+          
+          const getVal = (tag) => node.getElementsByTagName(tag)[0]?.textContent || '';
+          
+          const uid = getVal("UID");
+          const name = getVal("Name");
+          const startStr = getVal("Start").split('T')[0];
+          const finishStr = getVal("Finish").split('T')[0];
+          const progress = parseInt(getVal("PercentComplete")) || 0;
+          const wbs = getVal("WBS");
+          const outlineLevel = parseInt(getVal("OutlineLevel")) || 1;
+
+          if (name && uid && wbs) {
+            parsedTasks.push({
+              projectId: activeProjectId,
+              order: orderIndex++,
+              uid: uid,
+              wbs: wbs,
+              name: name,
+              start: startStr,
+              finish: finishStr,
+              progress: progress,
+              level: outlineLevel - 1 
+            });
+          }
+        }
+
+        if (parsedTasks.length > 0) {
+          // Eski dataları sil ve yenilerini ekle
+          if (!user || !db || isOfflineMode) {
+            const filtered = schedules.filter(s => s.projectId !== activeProjectId);
+            const newSchedules = parsedTasks.map(d => ({...d, id: Date.now().toString() + Math.random()}));
+            const updated = [...filtered, ...newSchedules];
+            setSchedules(updated);
+            localStorage.setItem('premium_schedules', JSON.stringify(updated));
+            
+            const initialExpanded = {};
+            newSchedules.forEach(s => initialExpanded[s.uid] = true);
+            setExpandedScheduleNodes(initialExpanded);
+            setIsScheduleLoading(false);
+            return;
+          }
+
+          const toDelete = schedules.filter(s => s.projectId === activeProjectId);
+          for (const item of toDelete) {
+            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'schedules', item.id));
+          }
+          
+          for (const item of parsedTasks) {
+            await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'schedules'), item);
+          }
+        } else {
+          alert(t.invalidXml);
+        }
+      } catch (error) {
+        console.error(error);
+        alert(t.readError);
+      } finally {
+        setIsScheduleLoading(false);
+        e.target.value = null; // inputu sıfırla
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+  const handleExportScheduleCSV = () => {
+    if (activeScheduleTasks.length === 0) return alert(t.noDataExport);
+    
+    const headers = [`WBS,${t.taskNameCol},${t.durationCol},${t.startCol},${t.finishCol},${t.progressCol}(%)`];
+    const csvData = activeScheduleTasks.map(task => `${task.wbs},"${task.name}",${calculateDays(task.start, task.finish)},${task.start},${task.finish},${task.progress}`);
+    const csvBlob = new Blob([headers.concat(csvData).join("\n")], { type: 'text/csv;charset=utf-8;' });
+    
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(csvBlob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `PMPP_Schedule_${activeProject?.name || 'Project'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const toggleScheduleNode = (uid) => {
+    setExpandedScheduleNodes(prev => ({ ...prev, [uid]: !prev[uid] }));
+  };
+
+  const calculateScheduleOverallProgress = () => {
+    if (activeScheduleTasks.length === 0) return 0;
+    const rootTasks = activeScheduleTasks.filter(task => task.level === 0);
+    if(rootTasks.length > 0) {
+      const sum = rootTasks.reduce((acc, curr) => acc + curr.progress, 0);
+      return Math.round(sum / rootTasks.length);
+    }
+    return 0;
+  };
+
+  useEffect(() => {
+     // Sekme değiştiğinde tüm açık düğümleri kapatıp yeniden aç
+     if(activeTab === 'schedule' && activeScheduleTasks.length > 0) {
+        const initialExpanded = {};
+        activeScheduleTasks.forEach(task => initialExpanded[task.uid] = true);
+        setExpandedScheduleNodes(initialExpanded);
+     }
+  }, [activeTab, activeProjectId]); // Dependency dizisine dikkat
+
+
   // --- EKRAN BİLEŞENLERİ ---
   const renderPortfolio = () => (
     <div className="flex-1 overflow-y-auto bg-gray-50 animate-in fade-in duration-300 pb-28">
@@ -917,7 +1155,6 @@ export default function App() {
               </div>
             </div>
             
-            {/* AVANS GÖSTERİMİ (Dashboard) */}
             {(activeProject.advancePayment > 0) && (
               <div className="bg-blue-50/50 rounded-xl p-3 border border-blue-100 mb-5 flex justify-between items-center">
                 <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1"><Banknote className="w-3 h-3"/> {t.advancePayment}</p>
@@ -1060,6 +1297,156 @@ export default function App() {
     );
   };
 
+  // YENİ: İŞ PROGRAMI EKRANI
+  const renderProjectSchedule = () => {
+    return (
+      <div className="pb-28 animate-in fade-in duration-300">
+        
+        <div className="px-5 pt-6 pb-4">
+          <div className="flex gap-2">
+            <input type="file" accept=".xml" className="hidden" ref={fileInputRef} onChange={handleScheduleFileUpload} />
+            <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
+              <Upload className="w-4 h-4" /> {t.importXml}
+            </button>
+            <button onClick={handleExportScheduleCSV} className="flex-1 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-sm">
+              <Download className="w-4 h-4" /> {t.exportCsv}
+            </button>
+          </div>
+        </div>
+
+        <div className="px-5 mb-5">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{t.scheduleOverallProgress}</p>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-extrabold text-blue-700 tracking-tight">%{calculateScheduleOverallProgress()}</span>
+              </div>
+            </div>
+            <div className="w-14 h-14 rounded-full border-4 border-gray-100 flex items-center justify-center relative">
+              <svg className="absolute inset-0 w-full h-full transform -rotate-90">
+                 <circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="4" className="text-blue-600" strokeDasharray="150" strokeDashoffset={150 - (150 * calculateScheduleOverallProgress()) / 100} strokeLinecap="round" />
+              </svg>
+              <Activity className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="px-4">
+          <div className="flex justify-between items-center mb-2 px-1">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">{t.tableView}</h3>
+            {activeScheduleTasks.length === 0 && <span className="text-xs font-bold text-blue-600 cursor-pointer" onClick={loadDummyScheduleData}>{t.loadDummy}</span>}
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+            
+            {isScheduleLoading && <p className="text-center py-10 text-gray-500 font-bold animate-pulse">{t.readingFile}</p>}
+            
+            {!isScheduleLoading && activeScheduleTasks.length === 0 && (
+               <div className="text-center py-12 px-4">
+                 <FileSpreadsheet className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                 <p className="text-sm font-bold text-gray-600">{t.noSchedule}</p>
+                 <p className="text-xs text-gray-400 mt-1">{t.noScheduleDesc}</p>
+               </div>
+            )}
+
+            {!isScheduleLoading && activeScheduleTasks.length > 0 && (
+              <div className="overflow-x-auto pb-2">
+                <table className="w-full text-left text-xs whitespace-nowrap">
+                  <thead className="bg-gray-100/80 text-gray-500 font-bold text-[10px] uppercase tracking-wider border-b border-gray-200">
+                    <tr>
+                      <th className="p-3 w-8 text-center sticky left-0 bg-gray-100/90 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)]"></th>
+                      <th className="p-3 min-w-[50px]">WBS</th>
+                      <th className="p-3 min-w-[200px]">{t.taskNameCol}</th>
+                      <th className="p-3 text-center">{t.durationCol}</th>
+                      <th className="p-3">{t.startCol}</th>
+                      <th className="p-3">{t.finishCol}</th>
+                      <th className="p-3 min-w-[100px] text-center">{t.progressCol}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activeScheduleTasks.map((task) => {
+                      const hasChildren = activeScheduleTasks.some(t => t.wbs.startsWith(task.wbs + '.') && t.uid !== task.uid);
+                      const isExpanded = expandedScheduleNodes[task.uid];
+                      
+                      const parentWbsParts = task.wbs.split('.');
+                      parentWbsParts.pop();
+                      const parentWbs = parentWbsParts.join('.');
+                      const parentTask = activeScheduleTasks.find(t => t.wbs === parentWbs);
+                      if (parentTask && expandedScheduleNodes[parentTask.uid] === false) return null;
+
+                      const isRoot = task.level === 0;
+                      const rowClass = isRoot ? 'bg-blue-50/30' : 'hover:bg-gray-50';
+                      const textClass = isRoot ? 'font-extrabold text-gray-900' : task.level === 1 ? 'font-bold text-gray-800' : 'font-medium text-gray-600';
+
+                      return (
+                        <tr key={task.id} className={`transition-colors ${rowClass}`}>
+                          <td 
+                            className="p-2 text-center sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)] cursor-pointer bg-inherit"
+                            onClick={() => hasChildren && toggleScheduleNode(task.uid)}
+                          >
+                            {hasChildren ? (
+                              isExpanded ? <ChevronDown className="w-4 h-4 mx-auto text-gray-500" /> : <ChevronRight className="w-4 h-4 mx-auto text-gray-500" />
+                            ) : (
+                              <span className="inline-block w-4"></span>
+                            )}
+                          </td>
+
+                          <td className="p-3 text-[10px] font-bold text-blue-600">
+                            {task.wbs}
+                          </td>
+
+                          <td 
+                            className={`p-3 truncate max-w-[250px] ${textClass}`}
+                            style={{ paddingLeft: `${Math.max(12, task.level * 16)}px` }}
+                          >
+                            {task.name}
+                          </td>
+
+                          <td className="p-3 text-center font-bold text-gray-600">
+                            {calculateDays(task.start, task.finish)}
+                          </td>
+
+                          <td className="p-3 text-gray-500 font-medium">
+                            {task.start}
+                          </td>
+
+                          <td className="p-3 text-gray-500 font-medium">
+                            {task.finish}
+                          </td>
+
+                          <td className="p-3">
+                            <div className="flex items-center gap-2 w-full">
+                              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full ${task.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                                  style={{ width: `${task.progress}%` }}
+                                ></div>
+                              </div>
+                              <span className={`text-[10px] font-bold w-7 text-right ${task.progress === 100 ? 'text-emerald-600' : 'text-gray-700'}`}>
+                                %{task.progress}
+                              </span>
+                            </div>
+                          </td>
+
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          
+          {!isScheduleLoading && activeScheduleTasks.length > 0 && (
+            <p className="text-[10px] text-center text-gray-400 mt-3 flex items-center justify-center gap-1">
+              <AlertCircle className="w-3 h-3"/> {t.scrollHint}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderProjectNotes = () => (
     <div className="px-5 pb-28 pt-6 space-y-5 animate-in fade-in duration-300">
       <h2 className="text-xl font-extrabold text-gray-900 mb-2 tracking-tight">{t.projectNotes}</h2>
@@ -1089,7 +1476,6 @@ export default function App() {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col justify-center items-center p-6 font-sans antialiased relative overflow-hidden">
-        {/* DİL SEÇİM BUTONU */}
         <div className="absolute top-6 right-6 z-20">
           <button onClick={toggleLanguage} className="bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md px-3 py-1.5 rounded-full text-xs font-extrabold text-white shadow-sm transition-colors flex items-center gap-1.5">
             <Globe className="w-3.5 h-3.5" />
@@ -1171,7 +1557,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased selection:bg-blue-100 selection:text-blue-900 relative">
       
-      {/* GLOBAL HATA MESAJI EKRANI */}
       {errorMessage && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-[90%] max-w-sm bg-red-500 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-start gap-3 animate-in slide-in-from-top-4">
           <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -1201,16 +1586,18 @@ export default function App() {
           <div className="flex-1 overflow-y-auto">
             {activeTab === 'home' && renderProjectDashboard()}
             {activeTab === 'tasks' && renderProjectTasks()}
+            {activeTab === 'schedule' && renderProjectSchedule()}
             {activeTab === 'notes' && renderProjectNotes()}
           </div>
         )}
 
-        {/* ALT MENÜ */}
+        {/* ALT MENÜ (YENİ DÜZEN) */}
         {activeProjectId && (
-          <div className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 px-6 py-3 flex justify-between items-center pb-safe z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
-            <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${activeTab === 'home' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><Home className={`w-5 h-5 ${activeTab === 'home' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">{t.summary}</span></button>
-            <button onClick={() => setActiveTab('tasks')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${activeTab === 'tasks' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><CheckSquare className={`w-5 h-5 ${activeTab === 'tasks' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">{t.tasksTab}</span></button>
-            <button onClick={() => setActiveTab('notes')} className={`flex flex-col items-center gap-1 w-16 transition-colors ${activeTab === 'notes' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><FileText className={`w-5 h-5 ${activeTab === 'notes' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">{t.notesTab}</span></button>
+          <div className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 px-4 py-3 flex justify-between items-center pb-safe z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
+            <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === 'home' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><Home className={`w-5 h-5 ${activeTab === 'home' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">{t.summary}</span></button>
+            <button onClick={() => setActiveTab('tasks')} className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === 'tasks' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><CheckSquare className={`w-5 h-5 ${activeTab === 'tasks' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">{t.tasksTab}</span></button>
+            <button onClick={() => setActiveTab('schedule')} className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === 'schedule' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><TableProperties className={`w-5 h-5 ${activeTab === 'schedule' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">{t.scheduleTab}</span></button>
+            <button onClick={() => setActiveTab('notes')} className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === 'notes' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><FileText className={`w-5 h-5 ${activeTab === 'notes' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">{t.notesTab}</span></button>
           </div>
         )}
 
@@ -1260,13 +1647,12 @@ export default function App() {
                       <div><label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.durationDays}</label><input type="number" min="1" value={projectForm.duration} onChange={e => setProjectForm({...projectForm, duration: e.target.value})} className="w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-sm font-semibold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" /></div>
                     </div>
                     
-                    {/* BÜTÇE VE AVANS TUTARI (GENİŞ EKRAN) */}
                     <div className="space-y-4">
                       <div>
                         <label className="block text-[11px] font-bold text-gray-600 mb-1.5 uppercase tracking-wider">{t.totalBudget}</label>
                         <div className="flex gap-2">
-                          <select value={projectForm.currency} onChange={e => setProjectForm({...projectForm, currency: e.target.value})} className="w-24 bg-gray-50 border border-gray-300 rounded-xl px-2 py-3 text-base font-extrabold focus:outline-none focus:border-blue-500"><option value="TRY">₺ (TL)</option><option value="USD">$ (USD)</option><option value="EUR">€ (EUR)</option></select>
-                          <input required type="number" value={projectForm.budget} onChange={e => setProjectForm({...projectForm, budget: e.target.value})} placeholder="0.00" className="flex-1 w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-base font-bold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
+                          <select value={projectForm.currency} onChange={e => setProjectForm({...projectForm, currency: e.target.value})} className="w-24 bg-gray-50 border border-gray-300 rounded-xl px-2 py-3 text-base font-extrabold focus:outline-none focus:border-blue-500"><option value="TRY">₺</option><option value="USD">$</option><option value="EUR">€</option></select>
+                          <input required type="number" value={projectForm.budget} onChange={e => setProjectForm({...projectForm, budget: e.target.value})} placeholder="0.00" className="flex-1 w-full bg-white border border-gray-300 rounded-xl px-3 py-3 text-base font-bold text-gray-900 focus:outline-none focus:border-blue-500 shadow-sm" />
                         </div>
                       </div>
                       <div>
@@ -1307,7 +1693,6 @@ export default function App() {
                   <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.client}</p><p className="font-bold text-gray-800 text-sm">{activeProject.client || '-'}</p></div>
                   <div className="grid grid-cols-2 gap-3"><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.contractDate}</p><p className="font-bold text-gray-800 text-sm">{formatDisplayDate(activeProject.contractDate) || '-'}</p></div><div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm"><p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">{t.durationDays}</p><p className="font-bold text-gray-800 text-sm">{activeProject.duration ? `${activeProject.duration}` : '-'}</p></div></div>
                   
-                  {/* BÜTÇE VE AVANS ALT ALTA - BÜYÜK RAKAMLAR İÇİN */}
                   <div className="space-y-3">
                     <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between">
                       <p className="text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-1 flex-shrink-0">{t.totalBudget}</p>
