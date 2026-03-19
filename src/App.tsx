@@ -10,8 +10,10 @@ import {
   getRemainingDays, loadLocal 
 } from './helpers';
 import { CircularProgress } from './CircularProgress';
-import ScheduleModule from './modules/ScheduleModule';
-import DailyReportModule from './modules/DailyReportModule';
+
+// MODÜLLER (Yol Hatalarını Önlemek İçin Dosya Uzantılarını Ekledik)
+import ScheduleModule from './modules/ScheduleModule.jsx';
+import DailyReportModule from './modules/DailyReportModule.jsx';
 
 // FIREBASE FONKSİYONLARI
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -648,7 +650,7 @@ export default function App() {
                 isOfflineMode={isOfflineMode} t={t} 
               />
             )}
-            {/* YENİ: GÜNLÜK RAPOR MODÜLÜ */}
+            {/* GÜNLÜK RAPOR MODÜLÜ */}
             {activeTab === 'report' && (
               <DailyReportModule 
                 activeProject={activeProject} 
@@ -660,7 +662,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ALT MENÜ */}
+        {/* ALT MENÜ (YENİ MODÜLLERLE) */}
         {activeProjectId && (
           <div className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 px-2 py-3 flex justify-between items-center pb-safe z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
             <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === 'home' ? 'text-blue-700' : 'text-gray-400 hover:text-gray-600'}`}><Home className={`w-5 h-5 ${activeTab === 'home' && 'stroke-[2.5px]'}`} /><span className="text-[10px] font-bold tracking-wide">Özet</span></button>
