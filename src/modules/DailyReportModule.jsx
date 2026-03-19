@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { 
   CalendarDays, CloudSun, Users, Tractor, FileText, 
-  Save, Lock, Plus, Trash2, CheckCircle2, AlertCircle 
+  Save, Lock, Plus, Trash2, CheckCircle2 
 } from 'lucide-react';
 
 const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -62,7 +62,7 @@ export default function DailyReportModule({ activeProject, appId, user, db, isOf
     if (isClosed) return showToast(t?.dayClosedMsg || "Günü kapatılmış rapor değiştirilemez.");
     
     setIsLoading(true);
-    // Benzersiz ID olarak proje ID + Tarih kullanıyoruz (Örn: proj123_2026-03-19)
+    // Benzersiz ID olarak proje ID + Tarih kullanıyoruz
     const reportId = `${activeProject.id}_${selectedDate}`;
     
     const reportData = {
@@ -79,7 +79,6 @@ export default function DailyReportModule({ activeProject, appId, user, db, isOf
 
     try {
       if (!user || !db || isOfflineMode) {
-         // Offline mod için basit simülasyon (Gerçek uygulamada localStorage'a yazılır)
          showToast("Çevrimdışı modda kaydedildi (Simülasyon).");
       } else {
          await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'dailyReports', reportId), reportData);
@@ -95,15 +94,11 @@ export default function DailyReportModule({ activeProject, appId, user, db, isOf
 
   // Dinamik Liste İşlemleri
   const addPersonnelRow = () => setPersonnel([...personnel, { id: Date.now(), company: '', count: '' }]);
-  const updatePersonnel = (id, field, value) => {
-    setPersonnel(personnel.map(p => p.id === id ? { ...p, [field]: value } : p));
-  };
+  const updatePersonnel = (id, field, value) => setPersonnel(personnel.map(p => p.id === id ? { ...p, [field]: value } : p));
   const removePersonnel = (id) => setPersonnel(personnel.filter(p => p.id !== id));
 
   const addEquipmentRow = () => setEquipment([...equipment, { id: Date.now(), name: '', count: '' }]);
-  const updateEquipment = (id, field, value) => {
-    setEquipment(equipment.map(e => e.id === id ? { ...e, [field]: value } : e));
-  };
+  const updateEquipment = (id, field, value) => setEquipment(equipment.map(e => e.id === id ? { ...e, [field]: value } : e));
   const removeEquipment = (id) => setEquipment(equipment.filter(e => e.id !== id));
 
   const totalPersonnel = personnel.reduce((sum, p) => sum + (parseInt(p.count) || 0), 0);
@@ -142,26 +137,14 @@ export default function DailyReportModule({ activeProject, appId, user, db, isOf
       <div className="px-5 mt-4">
         <h3 className="text-[11px] font-bold text-blue-700 uppercase tracking-widest mb-2 flex items-center gap-1.5"><CloudSun className="w-4 h-4"/> {t?.weather || 'Hava Durumu'}</h3>
         <div className="grid grid-cols-2 gap-3">
-          <select 
-            disabled={isClosed}
-            value={weather} 
-            onChange={(e) => setWeather(e.target.value)}
-            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-3 text-sm font-semibold text-gray-700 shadow-sm disabled:opacity-60"
-          >
+          <select disabled={isClosed} value={weather} onChange={(e) => setWeather(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl px-3 py-3 text-sm font-semibold text-gray-700 shadow-sm disabled:opacity-60">
             <option value="Güneşli">☀️ Güneşli</option>
             <option value="Bulutlu">☁️ Bulutlu</option>
             <option value="Yağmurlu">🌧️ Yağmurlu</option>
             <option value="Karlı">❄️ Karlı</option>
           </select>
           <div className="relative">
-            <input 
-              disabled={isClosed}
-              type="number" 
-              value={temperature} 
-              onChange={(e) => setTemperature(e.target.value)}
-              placeholder="Derece..." 
-              className="w-full bg-white border border-gray-200 rounded-xl pl-3 pr-8 py-3 text-sm font-semibold text-gray-700 shadow-sm disabled:opacity-60"
-            />
+            <input disabled={isClosed} type="number" value={temperature} onChange={(e) => setTemperature(e.target.value)} placeholder="Derece..." className="w-full bg-white border border-gray-200 rounded-xl pl-3 pr-8 py-3 text-sm font-semibold text-gray-700 shadow-sm disabled:opacity-60" />
             <span className="absolute right-4 top-3 text-gray-400 font-bold">°C</span>
           </div>
         </div>
@@ -178,69 +161,28 @@ export default function DailyReportModule({ activeProject, appId, user, db, isOf
           {personnel.length === 0 && <p className="text-xs text-gray-400 text-center py-2">Henüz personel eklenmedi.</p>}
           {personnel.map((p) => (
             <div key={p.id} className="flex items-center gap-2">
-              <input 
-                disabled={isClosed}
-                type="text" 
-                placeholder="Taşeron / Ekip Adı" 
-                value={p.company} 
-                onChange={(e) => updatePersonnel(p.id, 'company', e.target.value)}
-                className="flex-[2] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60"
-              />
-              <input 
-                disabled={isClosed}
-                type="number" 
-                placeholder="Kişi" 
-                value={p.count} 
-                onChange={(e) => updatePersonnel(p.id, 'count', e.target.value)}
-                className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold text-center disabled:opacity-60"
-              />
-              {!isClosed && (
-                <button onClick={() => removePersonnel(p.id)} className="p-2 text-red-400 hover:text-red-600 bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>
-              )}
+              <input disabled={isClosed} type="text" placeholder="Taşeron / Ekip Adı" value={p.company} onChange={(e) => updatePersonnel(p.id, 'company', e.target.value)} className="flex-[2] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60" />
+              <input disabled={isClosed} type="number" placeholder="Kişi" value={p.count} onChange={(e) => updatePersonnel(p.id, 'count', e.target.value)} className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold text-center disabled:opacity-60" />
+              {!isClosed && <button onClick={() => removePersonnel(p.id)} className="p-2 text-red-400 hover:text-red-600 bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>}
             </div>
           ))}
-          {!isClosed && (
-            <button onClick={addPersonnelRow} className="w-full py-2 border-2 border-dashed border-emerald-200 text-emerald-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1 hover:bg-emerald-50 transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Personel Ekle
-            </button>
-          )}
+          {!isClosed && <button onClick={addPersonnelRow} className="w-full py-2 border-2 border-dashed border-emerald-200 text-emerald-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1 hover:bg-emerald-50 transition-colors"><Plus className="w-3.5 h-3.5" /> Personel Ekle</button>}
         </div>
       </div>
 
       {/* MAKİNE & EKİPMAN */}
       <div className="px-5 mt-6">
         <h3 className="text-[11px] font-bold text-amber-600 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Tractor className="w-4 h-4"/> {t?.equipmentTracker || 'Makine & Ekipman'}</h3>
-        
         <div className="bg-white border border-gray-200 rounded-2xl p-3 shadow-sm space-y-3">
           {equipment.length === 0 && <p className="text-xs text-gray-400 text-center py-2">Henüz makine eklenmedi.</p>}
           {equipment.map((e) => (
             <div key={e.id} className="flex items-center gap-2">
-              <input 
-                disabled={isClosed}
-                type="text" 
-                placeholder="Makine Adı (Örn: Ekskavatör)" 
-                value={e.name} 
-                onChange={(evt) => updateEquipment(e.id, 'name', evt.target.value)}
-                className="flex-[2] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60"
-              />
-              <input 
-                disabled={isClosed}
-                type="number" 
-                placeholder="Adet" 
-                value={e.count} 
-                onChange={(evt) => updateEquipment(e.id, 'count', evt.target.value)}
-                className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold text-center disabled:opacity-60"
-              />
-              {!isClosed && (
-                <button onClick={() => removeEquipment(e.id)} className="p-2 text-red-400 hover:text-red-600 bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>
-              )}
+              <input disabled={isClosed} type="text" placeholder="Makine Adı (Örn: Ekskavatör)" value={e.name} onChange={(evt) => updateEquipment(e.id, 'name', evt.target.value)} className="flex-[2] bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-60" />
+              <input disabled={isClosed} type="number" placeholder="Adet" value={e.count} onChange={(evt) => updateEquipment(e.id, 'count', evt.target.value)} className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-bold text-center disabled:opacity-60" />
+              {!isClosed && <button onClick={() => removeEquipment(e.id)} className="p-2 text-red-400 hover:text-red-600 bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>}
             </div>
           ))}
-          {!isClosed && (
-            <button onClick={addEquipmentRow} className="w-full py-2 border-2 border-dashed border-amber-200 text-amber-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1 hover:bg-amber-50 transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Makine Ekle
-            </button>
-          )}
+          {!isClosed && <button onClick={addEquipmentRow} className="w-full py-2 border-2 border-dashed border-amber-200 text-amber-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1 hover:bg-amber-50 transition-colors"><Plus className="w-3.5 h-3.5" /> Makine Ekle</button>}
         </div>
       </div>
 
@@ -248,9 +190,7 @@ export default function DailyReportModule({ activeProject, appId, user, db, isOf
       <div className="px-5 mt-6">
         <h3 className="text-[11px] font-bold text-gray-600 uppercase tracking-widest mb-2 flex items-center gap-1.5"><FileText className="w-4 h-4"/> {t?.dailyNotes || 'Günün İmalatları ve Notlar'}</h3>
         <textarea 
-          disabled={isClosed}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          disabled={isClosed} value={notes} onChange={(e) => setNotes(e.target.value)}
           placeholder="Bugün sahada neler yapıldı? Aksaklıklar, gelen malzemeler..."
           className="w-full bg-white border border-gray-200 rounded-2xl p-4 text-sm font-medium text-gray-800 shadow-sm h-32 resize-none focus:outline-none focus:border-blue-500 disabled:opacity-60"
         ></textarea>
@@ -260,31 +200,17 @@ export default function DailyReportModule({ activeProject, appId, user, db, isOf
       <div className="px-5 mt-8 space-y-3">
         {!isClosed ? (
           <>
-            <button 
-              onClick={() => handleSaveReport(false)} 
-              disabled={isLoading}
-              className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-md hover:bg-blue-500 active:scale-95 transition-transform text-sm tracking-wide flex items-center justify-center gap-2 disabled:opacity-70"
-            >
+            <button onClick={() => handleSaveReport(false)} disabled={isLoading} className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-md hover:bg-blue-500 active:scale-95 transition-transform text-sm tracking-wide flex items-center justify-center gap-2 disabled:opacity-70">
               <Save className="w-4 h-4" /> {isLoading ? 'Kaydediliyor...' : (t?.saveReport || 'Taslak Olarak Kaydet')}
             </button>
-            <button 
-              onClick={() => {
-                if(window.confirm("Günü kapattıktan sonra bu rapor üzerinde değişiklik yapılamaz. Onaylıyor musunuz?")) {
-                  handleSaveReport(true);
-                }
-              }} 
-              disabled={isLoading}
-              className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold shadow-md hover:bg-gray-800 active:scale-95 transition-transform text-sm tracking-wide flex items-center justify-center gap-2 disabled:opacity-70"
-            >
+            <button onClick={() => { if(window.confirm("Günü kapattıktan sonra bu rapor üzerinde değişiklik yapılamaz. Onaylıyor musunuz?")) handleSaveReport(true); }} disabled={isLoading} className="w-full bg-gray-900 text-white py-3.5 rounded-xl font-bold shadow-md hover:bg-gray-800 active:scale-95 transition-transform text-sm tracking-wide flex items-center justify-center gap-2 disabled:opacity-70">
               <Lock className="w-4 h-4 text-amber-400" /> {t?.closeDay || 'Günü Kapat (Kilitle)'}
             </button>
           </>
         ) : (
           <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-start gap-3">
             <Lock className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <p className="text-xs font-bold text-red-800 leading-relaxed">
-              Bu günün raporu yetkili tarafından kapatılmış ve kilitlenmiştir. Düzenleme yapılamaz.
-            </p>
+            <p className="text-xs font-bold text-red-800 leading-relaxed">Bu günün raporu yetkili tarafından kapatılmış ve kilitlenmiştir. Düzenleme yapılamaz.</p>
           </div>
         )}
       </div>
@@ -292,4 +218,5 @@ export default function DailyReportModule({ activeProject, appId, user, db, isOf
     </div>
   );
 }
+
 
